@@ -1,0 +1,58 @@
+"""Tests for core UI widgets."""
+
+from __future__ import annotations
+
+import pytest
+from PyQt5.QtWidgets import QApplication
+
+from codex_traffic_lights.models import CodexStatus
+from codex_traffic_lights.widgets.header import HeaderWidget
+from codex_traffic_lights.widgets.main_window import FramelessMainWindow
+from codex_traffic_lights.widgets.status_bar import StatusBarWidget
+from codex_traffic_lights.widgets.traffic_light import TrafficLightWidget
+
+
+@pytest.fixture(scope="session", autouse=True)
+def qapplication() -> QApplication:
+    """Ensure widget tests have a QApplication instance."""
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+    return app
+
+
+def test_header_widget_has_prd_fixed_height() -> None:
+    """Header should reserve the 70px icon and title area from the PRD."""
+    header = HeaderWidget()
+
+    assert header.minimumHeight() == 70
+    assert header.maximumHeight() == 70
+
+
+def test_traffic_light_widget_accepts_three_opacity_values() -> None:
+    """TrafficLightWidget should expose red/yellow/green opacity properties."""
+    widget = TrafficLightWidget()
+
+    widget.set_light_opacity(0.2, 0.4, 0.6)
+
+    assert widget.red_opacity == pytest.approx(0.2)
+    assert widget.yellow_opacity == pytest.approx(0.4)
+    assert widget.green_opacity == pytest.approx(0.6)
+
+
+def test_status_bar_sets_visible_status_text() -> None:
+    """StatusBarWidget should expose the current user-facing text."""
+    status_bar = StatusBarWidget()
+
+    status_bar.set_status_text(CodexStatus.WAITING_USER_INPUT.label)
+
+    assert status_bar.status_text == CodexStatus.WAITING_USER_INPUT.label
+
+
+def test_main_window_set_status_uses_codex_status_label() -> None:
+    """Main window should show product labels, not app-server internals."""
+    window = FramelessMainWindow()
+
+    window.set_status(CodexStatus.WAITING_APPROVAL)
+
+    assert window.status_bar.status_text == CodexStatus.WAITING_APPROVAL.label
