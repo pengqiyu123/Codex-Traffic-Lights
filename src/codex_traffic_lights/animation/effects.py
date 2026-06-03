@@ -20,13 +20,21 @@ class LightEffectParams(NamedTuple):
 
 OFF_EFFECT = LightEffectParams(
     mode=LightMode.OFF,
-    min_opacity=0.1,
-    max_opacity=0.15,
+    min_opacity=0.08,
+    max_opacity=0.12,
     period_ms=0,
     halo_enabled=False,
     halo_spread=0,
 )
 SOLID_EFFECT = LightEffectParams(
+    mode=LightMode.SOLID,
+    min_opacity=0.95,
+    max_opacity=1.0,
+    period_ms=0,
+    halo_enabled=True,
+    halo_spread=8,
+)
+LOW_POWER_SOLID_EFFECT = LightEffectParams(
     mode=LightMode.SOLID,
     min_opacity=0.95,
     max_opacity=1.0,
@@ -72,7 +80,7 @@ STATUS_EFFECTS: dict[
     tuple[LightEffectParams, LightEffectParams, LightEffectParams],
 ] = {
     CodexStatus.OFFLINE: (SOLID_EFFECT, OFF_EFFECT, OFF_EFFECT),
-    CodexStatus.IDLE: (OFF_EFFECT, OFF_EFFECT, SOLID_EFFECT),
+    CodexStatus.IDLE: (OFF_EFFECT, OFF_EFFECT, LOW_POWER_SOLID_EFFECT),
     CodexStatus.WORKING: (OFF_EFFECT, SLOW_BREATH_EFFECT, OFF_EFFECT),
     CodexStatus.WAITING_APPROVAL: (
         OFF_EFFECT,

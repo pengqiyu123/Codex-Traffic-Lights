@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import pytest
+from PyQt5.QtCore import QSize
+from PyQt5.QtGui import QPixmap
 from PyQt5.QtTest import QSignalSpy
 from PyQt5.QtWidgets import QApplication, QPushButton
 
@@ -63,6 +65,17 @@ def test_side_buttons_use_painted_icons_not_text(button_name: str) -> None:
     assert button.text() == ""
     assert button.property("icon_name")
     assert button.styleSheet() == ""
+
+
+def test_side_buttons_render_without_error() -> None:
+    """Painted side buttons should render into a pixmap without crashing."""
+    widget = SideButtonsWidget()
+    widget.resize(32, 220)
+    pixmap = QPixmap(widget.size())
+
+    widget.render(pixmap)
+
+    assert pixmap.size() == QSize(32, 220)
 
 
 def test_main_window_zoom_buttons_clamp_scale_between_half_and_double() -> None:

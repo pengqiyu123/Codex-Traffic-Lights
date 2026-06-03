@@ -125,6 +125,7 @@ def test_main_window_set_status_uses_codex_status_label() -> None:
 def test_main_window_uses_new_compact_dimensions() -> None:
     """Compact mode should use the 72x220 body size from the visual redesign."""
     window = FramelessMainWindow()
+    window.show()
 
     assert window._body.width() == 72
     assert window.width() == 104

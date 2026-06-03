@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from PyQt5.QtCore import QRectF, Qt
-from PyQt5.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen
+from PyQt5.QtGui import QColor, QFont, QPainter, QPen
 from PyQt5.QtWidgets import QWidget
 
 
@@ -13,8 +13,8 @@ class HeaderWidget(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         """Create a fixed-height header widget."""
         super().__init__(parent)
-        self.setFixedHeight(70)
-        self.setMinimumWidth(80)
+        self.setFixedHeight(50)
+        self.setMinimumWidth(72)
 
     def paintEvent(self, event: object) -> None:  # noqa: N802
         """Paint the compact Codex mark and title."""
@@ -22,22 +22,21 @@ class HeaderWidget(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
-        icon_rect = QRectF((self.width() - 38) / 2, 7, 38, 28)
-        gradient = QLinearGradient(icon_rect.topLeft(), icon_rect.bottomRight())
-        gradient.setColorAt(0.0, QColor("#56D7FF"))
-        gradient.setColorAt(1.0, QColor("#7A5CFF"))
+        icon_rect = QRectF((self.width() - 16) / 2, 9, 16, 12)
+        painter.setPen(QPen(QColor("#2A2A30"), 1))
+        painter.setBrush(QColor("#12313A"))
+        painter.drawRoundedRect(icon_rect.adjusted(-1, -1, 1, 1), 2, 2)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor("#56D7FF"))
+        painter.drawRoundedRect(icon_rect, 1.5, 1.5)
 
-        path = QPainterPath()
-        path.addRoundedRect(icon_rect, 13, 13)
-        path.addEllipse(QRectF(icon_rect.left() + 6, icon_rect.top() - 5, 16, 16))
-        path.addEllipse(QRectF(icon_rect.left() + 17, icon_rect.top() - 8, 18, 18))
-        painter.fillPath(path, gradient)
-
-        painter.setPen(QPen(QColor("#FFFFFF")))
-        prompt_font = QFont("Consolas", 10, QFont.Bold)
+        painter.setPen(QPen(QColor("#0D0D0F")))
+        prompt_font = QFont("Consolas", 8, QFont.Bold)
         painter.setFont(prompt_font)
-        painter.drawText(icon_rect, Qt.AlignCenter, "_>_")
+        painter.drawText(icon_rect.adjusted(0, -0.5, 0, 0), Qt.AlignCenter, ">_")
 
-        title_font = QFont("Arial", 11, QFont.Bold)
+        title_font = QFont("Consolas", 10, QFont.Bold)
+        title_font.setLetterSpacing(QFont.AbsoluteSpacing, 2)
         painter.setFont(title_font)
-        painter.drawText(QRectF(0, 42, self.width(), 18), Qt.AlignCenter, "CODEX")
+        painter.setPen(QPen(QColor("#6A6A70")))
+        painter.drawText(QRectF(0, 27, self.width(), 16), Qt.AlignCenter, "CODEX")

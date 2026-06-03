@@ -2,21 +2,39 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import overload
 
 from PyQt5.QtCore import QPointF, QRectF, Qt
-from PyQt5.QtGui import QColor, QPainter, QRadialGradient
+from PyQt5.QtGui import QColor, QPainter, QPainterPath, QPen, QRadialGradient
 from PyQt5.QtWidgets import QWidget
 
 from codex_traffic_lights.animation.effects import LightEffectParams
 from codex_traffic_lights.models import LightMode
 
-RED_BRIGHT = QColor("#FF4444")
-RED_DIM = QColor("#3A1111")
-YELLOW_BRIGHT = QColor("#FFD700")
-YELLOW_DIM = QColor("#3A3300")
-GREEN_BRIGHT = QColor("#44FF44")
-GREEN_DIM = QColor("#113A11")
+BODY_BACKGROUND_COLOR = "#0D0D0F"
+PANEL_COLOR = "#16161A"
+BORDER_COLOR = "#2A2A30"
+HIGHLIGHT_BORDER_COLOR = "#3A3A42"
+GROOVE_COLOR = "#08080A"
+
+
+@dataclass(frozen=True)
+class LampPalette:
+    """Color palette for one physical lamp."""
+
+    bright: str
+    dim: str
+    halo_rgba: tuple[int, int, int, float]
+
+
+LAMP_PALETTE: dict[str, LampPalette] = {
+    "red": LampPalette("#FF3B30", "#2A0808", (255, 59, 48, 0.25)),
+    "yellow": LampPalette("#FFCC00", "#2A2400", (255, 204, 0, 0.25)),
+    "green": LampPalette("#34C759", "#082A10", (52, 199, 89, 0.25)),
+}
+
+_LAMP_ORDER = ("red", "yellow", "green")
 
 
 class TrafficLightWidget(QWidget):
@@ -25,8 +43,8 @@ class TrafficLightWidget(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         """Create a traffic-light painter widget."""
         super().__init__(parent)
-        self.setMinimumSize(80, 120)
-        self._opacities: list[float] = [1.0, 0.15, 0.15]
+        self.setMinimumSize(72, 120)
+        self._opacities: list[float] = [1.0, 0.1, 0.1]
         self._effects: list[LightEffectParams | None] = [None, None, None]
 
     @property
@@ -92,59 +110,25 @@ class TrafficLightWidget(QWidget):
         self.update()
 
     def paintEvent(self, event: object) -> None:  # noqa: N802
-        """Paint the three lights and their halos."""
+        """Paint the three lights as layered glass-covered hardware indicators."""
         del event
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
+        painter.setPen(Qt.NoPen)
 
-        lights = [
-            (RED_BRIGHT, RED_DIM, self._opacities[0], self._effects[0]),
-            (YELLOW_BRIGHT, YELLOW_DIM, self._opacities[1], self._effects[1]),
-            (GREEN_BRIGHT, GREEN_DIM, self._opacities[2], self._effects[2]),
-        ]
-        diameter = min(40, max(24, int(self.width() * 0.52)))
-        gap = 14
+        diameter = min(36, max(28, int(self.width() * 0.50)))
+        gap = 12
         total_height = diameter * 3 + gap * 2
         top = max(0, (self.height() - total_height) / 2)
         left = (self.width() - diameter) / 2
 
-        for index, (bright, dim, opacity, effect) in enumerate(lights):
+        for index, lamp_name in enumerate(_LAMP_ORDER):
+            palette = LAMP_PALETTE[lamp_name]
+            opacity = self._opacities[index]
+            effect = self._effects[index]
             y = top + index * (diameter + gap)
             rect = QRectF(left, y, diameter, diameter)
-            center = QPointF(rect.center())
-            if _halo_enabled(effect, opacity):
-                spread = effect.halo_spread if effect is not None else 8
-                halo_radius = diameter / 2 + spread
-                gradient = QRadialGradient(center, halo_radius)
-                halo_color = QColor(bright)
-                halo_color.setAlphaF(min(0.35, opacity * 0.30))
-                gradient.setColorAt(0.0, halo_color)
-                gradient.setColorAt(
-                    1.0,
-                    QColor(
-                        halo_color.red(),
-                        halo_color.green(),
-                        halo_color.blue(),
-                        0,
-                    ),
-                )
-                painter.fillRect(
-                    QRectF(
-                        center.x() - halo_radius,
-                        center.y() - halo_radius,
-                        halo_radius * 2,
-                        halo_radius * 2,
-                    ),
-                    gradient,
-                )
-
-            painter.setPen(Qt.NoPen)
-            painter.setBrush(dim)
-            painter.drawEllipse(rect)
-            active_color = QColor(bright)
-            active_color.setAlphaF(opacity)
-            painter.setBrush(active_color)
-            painter.drawEllipse(rect)
+            _paint_lamp(painter, rect, palette, opacity, effect)
 
     def _set_single_opacity(self, light_index: int, opacity: float) -> None:
         """Set one light opacity and repaint."""
@@ -159,6 +143,14 @@ def _clamp_opacity(opacity: float) -> float:
     return max(0.0, min(1.0, opacity))
 
 
+def _rgba_color(rgba: tuple[int, int, int, float], alpha_multiplier: float = 1.0) -> QColor:
+    """Create a QColor from an RGBA tuple with optional alpha scaling."""
+    red, green, blue, alpha = rgba
+    color = QColor(red, green, blue)
+    color.setAlphaF(max(0.0, min(1.0, alpha * alpha_multiplier)))
+    return color
+
+
 def _halo_enabled(effect: LightEffectParams | None, opacity: float) -> bool:
     """Return True when an effect should paint a halo."""
     return (
@@ -167,3 +159,151 @@ def _halo_enabled(effect: LightEffectParams | None, opacity: float) -> bool:
         and effect.mode is not LightMode.OFF
         and opacity > 0.18
     )
+
+
+def _lit_opacity(effect: LightEffectParams | None, opacity: float) -> float:
+    """Return the visible lit layer opacity, suppressing it for OFF lamps."""
+    if effect is not None and effect.mode is LightMode.OFF:
+        return 0.0
+    return _clamp_opacity(opacity)
+
+
+def _paint_groove(painter: QPainter, rect: QRectF) -> None:
+    """Paint the recessed circular socket behind a lamp."""
+    groove_rect = rect.adjusted(-4, -4, 4, 4)
+    groove_gradient = QRadialGradient(groove_rect.center(), groove_rect.width() / 2)
+    groove_gradient.setColorAt(0.0, QColor("#111115"))
+    groove_gradient.setColorAt(0.72, QColor(GROOVE_COLOR))
+    groove_gradient.setColorAt(1.0, QColor("#020203"))
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(groove_gradient)
+    painter.drawEllipse(groove_rect)
+
+
+def _paint_dim_glass(painter: QPainter, rect: QRectF, palette: LampPalette) -> None:
+    """Paint the deep unlit lamp glass color."""
+    dim_gradient = QRadialGradient(rect.center(), rect.width() / 2)
+    dim_gradient.setColorAt(0.0, QColor(palette.dim).lighter(125))
+    dim_gradient.setColorAt(0.68, QColor(palette.dim))
+    dim_gradient.setColorAt(1.0, QColor("#040405"))
+    painter.setBrush(dim_gradient)
+    painter.drawEllipse(rect)
+
+
+def _paint_lit_core(
+    painter: QPainter,
+    rect: QRectF,
+    palette: LampPalette,
+    opacity: float,
+) -> None:
+    """Paint the bright internal radial lamp glow."""
+    if opacity <= 0.0:
+        return
+
+    bright = QColor(palette.bright)
+    bright.setAlphaF(min(1.0, opacity))
+    mid = QColor(palette.bright)
+    mid.setAlphaF(min(0.82, opacity * 0.68))
+    edge = QColor(palette.dim)
+    edge.setAlphaF(min(0.75, opacity * 0.28))
+
+    glow = QRadialGradient(
+        QPointF(rect.center().x() - rect.width() * 0.12, rect.center().y() - rect.height() * 0.14),
+        rect.width() * 0.58,
+    )
+    glow.setColorAt(0.0, bright)
+    glow.setColorAt(0.45, mid)
+    glow.setColorAt(1.0, edge)
+    painter.setBrush(glow)
+    painter.drawEllipse(rect.adjusted(2, 2, -2, -2))
+
+
+def _paint_inner_glow(
+    painter: QPainter,
+    rect: QRectF,
+    palette: LampPalette,
+    opacity: float,
+) -> None:
+    """Paint the colored rim caused by light catching the glass edge."""
+    if opacity <= 0.0:
+        return
+
+    rim_color = QColor(palette.bright)
+    rim_color.setAlphaF(min(0.65, opacity * 0.45))
+    pen = QPen(rim_color, 2)
+    painter.setPen(pen)
+    painter.setBrush(Qt.NoBrush)
+    painter.drawEllipse(rect.adjusted(2, 2, -2, -2))
+    painter.setPen(Qt.NoPen)
+
+
+def _paint_highlight(painter: QPainter, rect: QRectF) -> None:
+    """Paint the fixed glass reflection highlight."""
+    highlight_rect = QRectF(
+        rect.left() + rect.width() * 0.26,
+        rect.top() + rect.height() * 0.18,
+        rect.width() * 0.20,
+        rect.height() * 0.13,
+    )
+    path = QPainterPath()
+    path.addEllipse(highlight_rect)
+    color = QColor(255, 255, 255)
+    color.setAlphaF(0.58)
+    painter.fillPath(path, color)
+
+
+def _paint_halo(
+    painter: QPainter,
+    rect: QRectF,
+    palette: LampPalette,
+    opacity: float,
+    effect: LightEffectParams | None,
+) -> None:
+    """Paint the lamp spill outside the glass when the effect enables halo."""
+    if not _halo_enabled(effect, opacity):
+        return
+
+    spread = effect.halo_spread if effect is not None else 8
+    radius = rect.width() / 2 + spread
+    halo = QRadialGradient(rect.center(), radius)
+    halo.setColorAt(0.0, _rgba_color(palette.halo_rgba, opacity))
+    halo.setColorAt(0.62, _rgba_color(palette.halo_rgba, opacity * 0.32))
+    halo.setColorAt(1.0, QColor(0, 0, 0, 0))
+    painter.setBrush(halo)
+    painter.setPen(Qt.NoPen)
+    painter.drawEllipse(
+        QRectF(
+            rect.center().x() - radius,
+            rect.center().y() - radius,
+            radius * 2,
+            radius * 2,
+        )
+    )
+
+
+def _paint_bezel(painter: QPainter, rect: QRectF) -> None:
+    """Paint the thin metallic retaining ring around a lamp."""
+    painter.setBrush(Qt.NoBrush)
+    painter.setPen(QPen(QColor(BORDER_COLOR), 1))
+    painter.drawEllipse(rect.adjusted(-1, -1, 1, 1))
+    painter.setPen(QPen(QColor(HIGHLIGHT_BORDER_COLOR), 1))
+    painter.drawArc(rect.adjusted(-1, -1, 1, 1), 45 * 16, 95 * 16)
+    painter.setPen(Qt.NoPen)
+
+
+def _paint_lamp(
+    painter: QPainter,
+    rect: QRectF,
+    palette: LampPalette,
+    opacity: float,
+    effect: LightEffectParams | None,
+) -> None:
+    """Paint one complete lamp using the seven-layer instrument spec."""
+    lit_opacity = _lit_opacity(effect, opacity)
+    _paint_halo(painter, rect, palette, lit_opacity, effect)
+    _paint_groove(painter, rect)
+    _paint_dim_glass(painter, rect, palette)
+    _paint_lit_core(painter, rect, palette, lit_opacity)
+    _paint_highlight(painter, rect)
+    _paint_inner_glow(painter, rect, palette, lit_opacity)
+    _paint_bezel(painter, rect)
