@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from codex_traffic_lights.animation.effects import LightEffectParams, STATUS_EFFECTS
+from codex_traffic_lights.animation.effects import STATUS_EFFECTS, LightEffectParams
 from codex_traffic_lights.models import CodexStatus, LightMode
 
 

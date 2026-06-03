@@ -6,7 +6,7 @@ import pytest
 from PyQt5.QtCore import QAbstractAnimation
 from PyQt5.QtWidgets import QApplication, QWidget
 
-from codex_traffic_lights.animation.effects import LightEffectParams, STATUS_EFFECTS
+from codex_traffic_lights.animation.effects import STATUS_EFFECTS, LightEffectParams
 from codex_traffic_lights.animation.engine import LightAnimationEngine
 from codex_traffic_lights.models import CodexStatus
 
@@ -58,7 +58,7 @@ def test_set_status_creates_running_animation_for_dynamic_effect() -> None:
     assert len(engine._animations) == 1
     animation = engine._animations[0]
     assert animation.duration() == STATUS_EFFECTS[CodexStatus.WORKING][1].period_ms
-    assert animation.state() is QAbstractAnimation.Running
+    assert animation.state() == QAbstractAnimation.Running
 
 
 def test_set_status_stops_existing_animations_before_starting_new_status() -> None:
@@ -70,5 +70,5 @@ def test_set_status_stops_existing_animations_before_starting_new_status() -> No
 
     engine.set_status(CodexStatus.IDLE)
 
-    assert old_animation.state() is QAbstractAnimation.Stopped
+    assert old_animation.state() == QAbstractAnimation.Stopped
     assert engine._animations == []
