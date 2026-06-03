@@ -19,6 +19,7 @@ class FakeProcess:
 
     process_name: str
     command_line: list[str]
+    pid: int = 1234
 
     def name(self) -> str:
         """Return the fake process name."""
@@ -82,6 +83,19 @@ def test_fallback_status_is_working_when_cmdline_matches(
     patch_processes(monkeypatch, [FakeProcess("python.exe", ["python", "-m", "codex"])])
 
     assert monitor._detect_fallback_status() is CodexStatus.WORKING
+
+
+def test_fallback_status_ignores_own_traffic_lights_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The monitor app itself should not be mistaken for Codex CLI."""
+    monitor = make_monitor()
+    patch_processes(
+        monkeypatch,
+        [FakeProcess("codex-traffic-lights.exe", ["codex_traffic_lights"])],
+    )
+
+    assert monitor._detect_fallback_status() is CodexStatus.OFFLINE
 
 
 def test_fallback_status_is_error_when_previous_online_now_offline(
