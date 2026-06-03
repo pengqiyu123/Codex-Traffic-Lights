@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping
 
 import psutil
@@ -18,6 +19,7 @@ ONLINE_STATUSES: frozenset[CodexStatus] = frozenset(
         CodexStatus.WAITING_USER_INPUT,
     }
 )
+SELF_PROCESS_TOKENS: tuple[str, ...] = ("codex-traffic-lights", "codex_traffic_lights")
 
 
 class ProcessMonitor(QThread):
@@ -62,13 +64,18 @@ class ProcessMonitor(QThread):
     def _has_matching_codex_process(self) -> bool:
         """Return True when any process name or command line contains the configured name."""
         process_name = self.config.codex_process_name.casefold()
+        current_pid = os.getpid()
         for process in psutil.process_iter():
+            if getattr(process, "pid", None) == current_pid:
+                continue
             try:
                 name = process.name()
                 command_line = process.cmdline()
             except (psutil.AccessDenied, psutil.NoSuchProcess, psutil.ZombieProcess):
                 continue
 
+            if _is_traffic_lights_process(name, command_line):
+                continue
             if _contains_token(name, process_name):
                 return True
             if any(_contains_token(argument, process_name) for argument in command_line):
@@ -79,3 +86,13 @@ class ProcessMonitor(QThread):
 def _contains_token(value: object, token: str) -> bool:
     """Return True when a string value contains a case-insensitive token."""
     return isinstance(value, str) and token in value.casefold()
+
+
+def _is_traffic_lights_process(name: object, command_line: list[str]) -> bool:
+    """Return True when process metadata belongs to this monitoring app."""
+    values: list[object] = [name, *command_line]
+    return any(
+        _contains_token(value, self_token)
+        for value in values
+        for self_token in SELF_PROCESS_TOKENS
+    )

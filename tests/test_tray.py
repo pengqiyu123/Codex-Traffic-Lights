@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
-from PyQt5.QtWidgets import QApplication, QWidget, QSystemTrayIcon
+from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QWidget
 
 from codex_traffic_lights.tray import TrayIcon
 

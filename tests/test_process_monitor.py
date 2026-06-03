@@ -6,8 +6,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 
 import pytest
-from PyQt5.QtCore import QCoreApplication
 from PyQt5.QtTest import QSignalSpy
+from PyQt5.QtWidgets import QApplication
 
 from codex_traffic_lights.models import AppConfig, CodexStatus
 from codex_traffic_lights.process_monitor import ProcessMonitor
@@ -31,11 +31,11 @@ class FakeProcess:
 
 
 @pytest.fixture(scope="session", autouse=True)
-def qcore_application() -> QCoreApplication:
+def qapplication() -> QApplication:
     """Ensure PyQt signals have an application object during tests."""
-    app = QCoreApplication.instance()
+    app = QApplication.instance()
     if app is None:
-        app = QCoreApplication([])
+        app = QApplication([])
     return app
 
 
