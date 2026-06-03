@@ -43,6 +43,28 @@ def test_each_side_button_emits_its_signal(button_name: str, signal_name: str) -
     assert len(spy) == 1
 
 
+@pytest.mark.parametrize(
+    "button_name",
+    [
+        "notification_button",
+        "zoom_out_button",
+        "zoom_in_button",
+        "settings_button",
+        "power_button",
+        "sound_button",
+    ],
+)
+def test_side_buttons_use_painted_icons_not_text(button_name: str) -> None:
+    """Side buttons should be icon-painted controls, not emoji/text buttons."""
+    widget = SideButtonsWidget()
+    button = widget.findChild(QPushButton, button_name)
+
+    assert button is not None
+    assert button.text() == ""
+    assert button.property("icon_name")
+    assert button.styleSheet() == ""
+
+
 def test_main_window_zoom_buttons_clamp_scale_between_half_and_double() -> None:
     """Main-window zoom controls should clamp scale to 50%-200%."""
     window = FramelessMainWindow()

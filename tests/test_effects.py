@@ -30,7 +30,7 @@ def test_each_status_has_three_legal_light_effects() -> None:
 @pytest.mark.parametrize(
     ("mode", "min_opacity", "max_opacity", "period_ms"),
     [
-        (LightMode.OFF, 0.1, 0.15, 0),
+        (LightMode.OFF, 0.08, 0.12, 0),
         (LightMode.SOLID, 0.95, 1.0, 0),
         (LightMode.SLOW_BREATH, 0.3, 1.0, 3000),
         (LightMode.INTERMITTENT_BLINK, 0.1, 0.6, 1000),
@@ -73,6 +73,13 @@ def test_idle_status_has_only_green_light_active() -> None:
     assert red.mode is LightMode.OFF
     assert yellow.mode is LightMode.OFF
     assert green.mode is not LightMode.OFF
+
+
+def test_idle_green_light_has_no_halo() -> None:
+    """IDLE should look like a low-power steady indicator without an outer halo."""
+    _, _, green = STATUS_EFFECTS[CodexStatus.IDLE]
+
+    assert green.halo_enabled is False
 
 
 def test_waiting_approval_status_has_yellow_and_green_active() -> None:
