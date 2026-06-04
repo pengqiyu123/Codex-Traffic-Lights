@@ -163,6 +163,34 @@ def test_resolve_falls_back_to_venv_python(
     assert "Switching hook Python executable" in caplog.text
 
 
+def test_resolve_normalizes_pythonw_to_python(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """GUI startup with pythonw should still register console Python for hooks."""
+    project_root = tmp_path
+    (project_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
+    scripts_dir = project_root / ".venv" / "Scripts"
+    scripts_dir.mkdir(parents=True)
+    python = scripts_dir / "python.exe"
+    pythonw = scripts_dir / "pythonw.exe"
+    python.write_text("", encoding="utf-8")
+    pythonw.write_text("", encoding="utf-8")
+
+    checked: list[str] = []
+
+    def fake_verify(candidate: str) -> bool:
+        checked.append(candidate)
+        return Path(candidate) == python
+
+    monkeypatch.setattr(hook_installer.sys, "executable", str(pythonw))
+    monkeypatch.setattr(hook_installer, "_find_project_root", lambda: project_root)
+    monkeypatch.setattr(hook_installer, "verify_can_import_hook_scripts", fake_verify)
+
+    assert resolve_python_executable() == str(python)
+    assert checked == [str(python)]
+
+
 def test_resolve_warns_when_no_candidate_works(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,

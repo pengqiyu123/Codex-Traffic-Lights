@@ -171,7 +171,7 @@ def verify_can_import_hook_scripts(python_executable: str) -> bool:
 
 def _python_candidates() -> list[str]:
     """Return Python candidates in priority order for hook registration."""
-    candidates = [sys.executable]
+    candidates = [_console_python_for_hooks(Path(sys.executable))]
     project_root = _find_project_root()
     if project_root is not None:
         venv_python = _project_venv_python(project_root)
@@ -197,6 +197,14 @@ def _project_venv_python(project_root: Path) -> Path | None:
     )
     candidate = project_root / relative_path
     return candidate if candidate.is_file() else None
+
+
+def _console_python_for_hooks(python_executable: Path) -> str:
+    """Prefer console Python over pythonw so hook scripts can use stdin/stdout."""
+    if python_executable.name.lower() != "pythonw.exe":
+        return str(python_executable)
+    console_python = python_executable.with_name("python.exe")
+    return str(console_python) if console_python.is_file() else str(python_executable)
 
 
 def _dedupe_strings(values: list[str]) -> list[str]:
