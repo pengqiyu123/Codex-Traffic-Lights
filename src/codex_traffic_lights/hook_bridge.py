@@ -29,6 +29,7 @@ from collections.abc import Callable
 from contextlib import suppress
 from pathlib import Path
 
+from codex_traffic_lights._helpers import path_basename
 from codex_traffic_lights.models import AppConfig, CodexStatus
 from codex_traffic_lights.session_models import SessionRegistry, SessionStatus
 from codex_traffic_lights.status_aggregator import aggregate_status
@@ -92,7 +93,7 @@ class HookEventMapper:
 
         cwd = payload.get("cwd")
         if isinstance(cwd, str) and cwd.strip():
-            basename = _path_basename(cwd.strip())
+            basename = path_basename(cwd.strip())
             if basename:
                 return basename
         return "global"
@@ -106,7 +107,7 @@ class HookEventMapper:
                 return value.strip()
         cwd = payload.get("cwd")
         if isinstance(cwd, str) and cwd.strip():
-            basename = _path_basename(cwd.strip())
+            basename = path_basename(cwd.strip())
             if basename:
                 return basename
         return fallback[:12] if len(fallback) > 12 else fallback
@@ -330,11 +331,3 @@ def _is_error_stop(payload: dict[str, object]) -> bool:
             return True
     error_value = payload.get("error")
     return bool(error_value)
-
-
-def _path_basename(value: str) -> str:
-    """Extract a basename from POSIX or Windows-looking paths."""
-    normalized = value.replace("\\", "/").rstrip("/")
-    if not normalized:
-        return ""
-    return normalized.rsplit("/", 1)[-1]

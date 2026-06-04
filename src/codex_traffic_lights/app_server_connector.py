@@ -32,11 +32,12 @@ import struct
 import time
 from collections.abc import Iterator, Mapping
 from contextlib import suppress
-from typing import Protocol, cast
+from typing import Protocol, TypeGuard, cast
 from urllib.parse import urlparse
 
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
 
+from codex_traffic_lights._helpers import extract_string, path_basename
 from codex_traffic_lights.models import AppConfig, CodexStatus
 from codex_traffic_lights.session_models import SessionRegistry, SessionStatus
 from codex_traffic_lights.state_mapper import CodexStateMapper
@@ -45,6 +46,9 @@ from codex_traffic_lights.status_aggregator import aggregate_status
 DEFAULT_APP_SERVER_URL = "stdio://"
 WEBSOCKET_SCHEME = "ws"
 JSON_RPC_TIMEOUT_SECONDS = 3.0
+
+_extract_string = extract_string
+_path_basename = path_basename
 
 
 class AppServerTransport(Protocol):
@@ -169,11 +173,11 @@ class AppServerConnector(QThread):
 
     def _handle_thread_closed(self, params: Mapping[str, object]) -> None:
         """Remove a session from a thread/closed notification."""
-        thread_id = _extract_string(params, "threadId", "thread_id")
+        thread_id = extract_string(params, "threadId", "thread_id")
         if thread_id is None:
             return
 
-        endpoint_id = _extract_string(params, "endpointId", "endpoint_id") or self.endpoint_id
+        endpoint_id = extract_string(params, "endpointId", "endpoint_id") or self.endpoint_id
         self.registry.remove(_session_key(endpoint_id, thread_id))
         self._display_names.pop(thread_id, None)
         self.sessions_changed.emit(self.registry.get_all())
@@ -181,7 +185,7 @@ class AppServerConnector(QThread):
 
     def _handle_status_changed(self, params: Mapping[str, object]) -> None:
         """Update a session from a thread/status/changed notification."""
-        thread_id = _extract_string(params, "threadId", "thread_id")
+        thread_id = extract_string(params, "threadId", "thread_id")
         status_payload = params.get("status")
         if thread_id is None or not isinstance(status_payload, Mapping):
             return
@@ -190,7 +194,7 @@ class AppServerConnector(QThread):
         if mapped_status is None:
             return
 
-        endpoint_id = _extract_string(params, "endpointId", "endpoint_id") or self.endpoint_id
+        endpoint_id = extract_string(params, "endpointId", "endpoint_id") or self.endpoint_id
         display_name = self._display_names.get(thread_id, thread_id)
         session = SessionStatus(
             session_key=_session_key(endpoint_id, thread_id),
@@ -231,7 +235,7 @@ class AppServerConnector(QThread):
         params: Mapping[str, object],
     ) -> None:
         """Convert a Thread payload into SessionStatus and update registry."""
-        thread_id = _extract_string(thread, "id", "threadId", "thread_id")
+        thread_id = extract_string(thread, "id", "threadId", "thread_id")
         status_payload = thread.get("status")
         if thread_id is None or not isinstance(status_payload, Mapping):
             return
@@ -240,7 +244,7 @@ class AppServerConnector(QThread):
         if mapped_status is None:
             return
 
-        endpoint_id = _extract_string(params, "endpointId", "endpoint_id") or self.endpoint_id
+        endpoint_id = extract_string(params, "endpointId", "endpoint_id") or self.endpoint_id
         display_name = _display_name_from_thread(thread, thread_id)
         self._display_names[thread_id] = display_name
         session = SessionStatus(
@@ -418,7 +422,7 @@ def _display_name_from_thread(thread: Mapping[str, object], fallback: str) -> st
 
     cwd = thread.get("cwd")
     if isinstance(cwd, str) and cwd.strip():
-        basename = _path_basename(cwd)
+        basename = path_basename(cwd)
         if basename:
             return basename
 
@@ -429,31 +433,14 @@ def _display_name_from_thread(thread: Mapping[str, object], fallback: str) -> st
     return fallback[:12] if len(fallback) > 12 else fallback
 
 
-def _extract_string(mapping: Mapping[str, object], *keys: str) -> str | None:
-    """Extract the first non-empty string value from a mapping."""
-    for key in keys:
-        value = mapping.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return None
-
-
 def _session_key(endpoint_id: str, thread_id: str) -> str:
     """Build the compound session registry key."""
     return f"{endpoint_id}::{thread_id}"
 
 
-def _is_string_list(value: object) -> bool:
+def _is_string_list(value: object) -> TypeGuard[list[str]]:
     """Return True when a value is a list of strings."""
     return isinstance(value, list) and all(isinstance(item, str) for item in value)
-
-
-def _path_basename(value: str) -> str:
-    """Extract a basename from POSIX or Windows-looking paths."""
-    normalized = value.replace("\\", "/").rstrip("/")
-    if not normalized:
-        return ""
-    return normalized.rsplit("/", 1)[-1]
 
 
 def _recv_until(sock: socket.socket, marker: bytes, timeout_seconds: float) -> bytes:

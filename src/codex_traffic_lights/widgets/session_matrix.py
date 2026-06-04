@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from PyQt5.QtCore import QRectF, Qt
 from PyQt5.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PyQt5.QtWidgets import QHBoxLayout, QLabel, QWidget
@@ -70,17 +72,18 @@ class SessionMatrixWidget(QWidget):
         for session_key, column in list(self._columns_by_key.items()):
             if session_key not in visible_keys:
                 self._layout.removeWidget(column)
-                column.setParent(None)
+                column.setParent(cast(QWidget, None))
                 column.deleteLater()
                 del self._columns_by_key[session_key]
 
         self._session_columns = []
         for index, session in enumerate(visible_sessions):
-            column = self._columns_by_key.get(session.session_key)
-            if column is None:
+            maybe_column = self._columns_by_key.get(session.session_key)
+            if maybe_column is None:
                 column = SessionColumnWidget(session)
                 self._columns_by_key[session.session_key] = column
             else:
+                column = maybe_column
                 column.set_session(session)
 
             self._layout.removeWidget(column)

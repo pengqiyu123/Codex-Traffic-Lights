@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import QWidget
 from codex_traffic_lights.animation.effects import STATUS_EFFECTS, LightEffectParams
 from codex_traffic_lights.models import CodexStatus, LightMode
 from codex_traffic_lights.session_models import SessionStatus
-from codex_traffic_lights.widgets.traffic_light import LAMP_PALETTE, _paint_lamp
+from codex_traffic_lights.widgets.traffic_light import LAMP_PALETTE, STATUS_COLORS, _paint_lamp
 
 COLUMN_WIDTH = 44
 COLUMN_HEIGHT = 68
@@ -20,14 +20,6 @@ MINI_LAMP_GAP = 4
 STATUS_DOT_DIAMETER = 6
 
 _LAMP_NAMES = ("red", "yellow", "green")
-_STATUS_COLORS = {
-    CodexStatus.OFFLINE: LAMP_PALETTE["red"].bright,
-    CodexStatus.IDLE: LAMP_PALETTE["green"].bright,
-    CodexStatus.WORKING: LAMP_PALETTE["yellow"].bright,
-    CodexStatus.WAITING_APPROVAL: LAMP_PALETTE["yellow"].bright,
-    CodexStatus.WAITING_USER_INPUT: LAMP_PALETTE["yellow"].bright,
-    CodexStatus.ERROR: LAMP_PALETTE["red"].bright,
-}
 
 
 class SessionColumnWidget(QWidget):
@@ -52,7 +44,7 @@ class SessionColumnWidget(QWidget):
     @property
     def status_color(self) -> str:
         """Return the primary color for the session status."""
-        return _STATUS_COLORS[self._session.status]
+        return STATUS_COLORS[self._session.status]
 
     def set_session(self, session: SessionStatus) -> None:
         """Update session data, tooltip, effects, and repaint."""

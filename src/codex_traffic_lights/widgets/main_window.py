@@ -17,8 +17,8 @@ from codex_traffic_lights.widgets.status_bar import StatusBarWidget
 from codex_traffic_lights.widgets.traffic_light import (
     BODY_BACKGROUND_COLOR,
     BORDER_COLOR,
-    LAMP_PALETTE,
     PANEL_COLOR,
+    STATUS_COLORS,
     TrafficLightWidget,
 )
 
@@ -34,16 +34,6 @@ EXPANDED_GLOBAL_HEIGHT = 180
 EDGE_THRESHOLD = 8
 EDGE_VISIBLE_WIDTH = 8
 ANIMATION_DURATION_MS = 200
-
-_STATUS_COLORS = {
-    CodexStatus.OFFLINE: LAMP_PALETTE["red"].bright,
-    CodexStatus.IDLE: LAMP_PALETTE["green"].bright,
-    CodexStatus.WORKING: LAMP_PALETTE["yellow"].bright,
-    CodexStatus.WAITING_APPROVAL: LAMP_PALETTE["yellow"].bright,
-    CodexStatus.WAITING_USER_INPUT: LAMP_PALETTE["yellow"].bright,
-    CodexStatus.ERROR: LAMP_PALETTE["red"].bright,
-}
-
 
 class InstrumentPanel(QWidget):
     """Paint the floating hardware-panel body."""
@@ -125,7 +115,7 @@ class FramelessMainWindow(QWidget):
     def set_status(self, status: CodexStatus) -> None:
         """Update status text and light animation from a product status."""
         self._current_status = status
-        status_color = _STATUS_COLORS[status]
+        status_color = STATUS_COLORS[status]
         self.status_bar.set_status_text(aggregate_display_text(self._sessions, status))
         self.status_bar.set_status_color(status_color)
         self.side_buttons.set_accent_color(status_color)

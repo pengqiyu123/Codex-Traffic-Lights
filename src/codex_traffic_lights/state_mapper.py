@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from typing import cast
+from typing import TypeGuard, cast
 
 from codex_traffic_lights.models import CodexStatus
 
@@ -59,7 +59,7 @@ class CodexStateMapper:
         return None
 
 
-def _is_string_sequence(value: object) -> bool:
+def _is_string_sequence(value: object) -> TypeGuard[Sequence[str]]:
     """Return True when a value is a non-string sequence of strings."""
     return (
         isinstance(value, Sequence)

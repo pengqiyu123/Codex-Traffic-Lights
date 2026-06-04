@@ -10,7 +10,7 @@ from PyQt5.QtGui import QColor, QPainter, QPainterPath, QPen, QRadialGradient
 from PyQt5.QtWidgets import QWidget
 
 from codex_traffic_lights.animation.effects import LightEffectParams
-from codex_traffic_lights.models import LightMode
+from codex_traffic_lights.models import CodexStatus, LightMode
 
 BODY_BACKGROUND_COLOR = "#0D0D0F"
 PANEL_COLOR = "#16161A"
@@ -32,6 +32,15 @@ LAMP_PALETTE: dict[str, LampPalette] = {
     "red": LampPalette("#FF3B30", "#2A0808", (255, 59, 48, 0.25)),
     "yellow": LampPalette("#FFCC00", "#2A2400", (255, 204, 0, 0.25)),
     "green": LampPalette("#34C759", "#082A10", (52, 199, 89, 0.25)),
+}
+
+STATUS_COLORS: dict[CodexStatus, str] = {
+    CodexStatus.OFFLINE: LAMP_PALETTE["red"].bright,
+    CodexStatus.IDLE: LAMP_PALETTE["green"].bright,
+    CodexStatus.WORKING: LAMP_PALETTE["yellow"].bright,
+    CodexStatus.WAITING_APPROVAL: LAMP_PALETTE["yellow"].bright,
+    CodexStatus.WAITING_USER_INPUT: LAMP_PALETTE["yellow"].bright,
+    CodexStatus.ERROR: LAMP_PALETTE["red"].bright,
 }
 
 _LAMP_ORDER = ("red", "yellow", "green")
@@ -81,11 +90,11 @@ class TrafficLightWidget(QWidget):
         self._set_single_opacity(2, opacity)
 
     @overload
-    def set_light_opacity(self, red: float, yellow: float, green: float) -> None:
+    def set_light_opacity(self, red: float, yellow: float, green: float, /) -> None:
         ...
 
     @overload
-    def set_light_opacity(self, light_index: int, opacity: float) -> None:
+    def set_light_opacity(self, light_index: int, opacity: float, /) -> None:
         ...
 
     def set_light_opacity(
@@ -93,6 +102,7 @@ class TrafficLightWidget(QWidget):
         first: float | int,
         second: float | None = None,
         third: float | None = None,
+        /,
     ) -> None:
         """Set all light opacities, or update one light by index for animations."""
         if isinstance(first, int) and second is not None and third is None:

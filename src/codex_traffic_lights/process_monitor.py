@@ -9,6 +9,7 @@ from collections.abc import Mapping
 import psutil
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
 
+from codex_traffic_lights._helpers import extract_string, path_basename
 from codex_traffic_lights.models import AppConfig, CodexStatus
 from codex_traffic_lights.session_models import SessionRegistry, SessionStatus
 from codex_traffic_lights.state_mapper import CodexStateMapper
@@ -66,13 +67,13 @@ class ProcessMonitor(QThread):
         if mapped_status is None:
             return
 
-        thread_id = _extract_string(event, "threadId", "thread_id")
+        thread_id = extract_string(event, "threadId", "thread_id")
         if thread_id is None:
             self._set_status(mapped_status)
             return
 
         endpoint_id = (
-            _extract_string(event, "endpointId", "endpoint_id")
+            extract_string(event, "endpointId", "endpoint_id")
             or self.config.app_server_url
             or "app-server"
         )
@@ -140,15 +141,6 @@ def _is_traffic_lights_process(name: object, command_line: list[str]) -> bool:
     )
 
 
-def _extract_string(mapping: Mapping[str, object], *keys: str) -> str | None:
-    """Extract the first non-empty string value from a mapping."""
-    for key in keys:
-        value = mapping.get(key)
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-    return None
-
-
 def _display_name_from_event(event: Mapping[str, object], fallback: str) -> str:
     """Return a short display name for thread-scoped app-server events."""
     for key in ("display_name", "name", "workspace", "repo", "repository"):
@@ -158,16 +150,8 @@ def _display_name_from_event(event: Mapping[str, object], fallback: str) -> str:
 
     cwd = event.get("cwd")
     if isinstance(cwd, str) and cwd.strip():
-        basename = _path_basename(cwd)
+        basename = path_basename(cwd)
         if basename:
             return basename
 
     return fallback[:12] if len(fallback) > 12 else fallback
-
-
-def _path_basename(value: str) -> str:
-    """Extract a basename from POSIX or Windows-looking paths."""
-    normalized = value.replace("\\", "/").rstrip("/")
-    if not normalized:
-        return ""
-    return normalized.rsplit("/", 1)[-1]
