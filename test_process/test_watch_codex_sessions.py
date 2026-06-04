@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from watch_codex_sessions import load_sessions, summarize_sessions
+from watch_codex_sessions import filter_sessions, load_sessions, summarize_sessions
 
 
 def test_load_sessions_reads_two_distinct_real_shape_files(tmp_path: Path) -> None:
@@ -46,6 +46,50 @@ def test_load_sessions_ignores_invalid_or_unknown_status_files(tmp_path: Path) -
     )
 
     assert load_sessions(tmp_path) == []
+
+
+def test_filter_sessions_can_select_codex_only(tmp_path: Path) -> None:
+    """Codex-only diagnostics should ignore Claude Code hook files."""
+    _write_session(
+        tmp_path / "codex.json",
+        session_key="codex::thread-a",
+        display_name="repo-a",
+        status="WORKING",
+        updated_at=100.0,
+    )
+    _write_session(
+        tmp_path / "claude.json",
+        session_key="claude::thread-b",
+        display_name="repo-b",
+        status="WORKING",
+        updated_at=101.0,
+    )
+
+    sessions = filter_sessions(load_sessions(tmp_path), "codex")
+
+    assert [session.session_key for session in sessions] == ["codex::thread-a"]
+
+
+def test_filter_sessions_can_select_claude_only(tmp_path: Path) -> None:
+    """Claude-only diagnostics should ignore Codex hook files."""
+    _write_session(
+        tmp_path / "codex.json",
+        session_key="codex::thread-a",
+        display_name="repo-a",
+        status="WORKING",
+        updated_at=100.0,
+    )
+    _write_session(
+        tmp_path / "claude.json",
+        session_key="claude::thread-b",
+        display_name="repo-b",
+        status="IDLE",
+        updated_at=101.0,
+    )
+
+    sessions = filter_sessions(load_sessions(tmp_path), "claude")
+
+    assert [session.session_key for session in sessions] == ["claude::thread-b"]
 
 
 def _write_session(

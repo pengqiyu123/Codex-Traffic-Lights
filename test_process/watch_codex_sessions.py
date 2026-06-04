@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_SESSIONS_DIR = Path.home() / ".codex-traffic-lights" / "sessions"
+SOURCE_CHOICES = ("all", "codex", "claude")
 KNOWN_STATUSES = {
     "OFFLINE",
     "IDLE",
@@ -107,15 +108,24 @@ def summarize_sessions(sessions: list[ObservedSession]) -> dict[str, Any]:
     }
 
 
-def watch_sessions(sessions_dir: Path, duration: float, interval: float) -> int:
+def filter_sessions(sessions: list[ObservedSession], source: str) -> list[ObservedSession]:
+    """Filter observed sessions by session_key source prefix."""
+    if source == "all":
+        return sessions
+    prefix = f"{source}::"
+    return [session for session in sessions if session.session_key.startswith(prefix)]
+
+
+def watch_sessions(sessions_dir: Path, duration: float, interval: float, source: str) -> int:
     """Print session changes for a fixed duration."""
     deadline = time.monotonic() + duration
     previous: dict[str, tuple[str, str, float]] = {}
     printed_any = False
 
     print(f"watching={sessions_dir}")
+    print(f"source_filter={source}")
     while time.monotonic() <= deadline:
-        sessions = load_sessions(sessions_dir)
+        sessions = filter_sessions(load_sessions(sessions_dir), source)
         current = {session.session_key: session.fingerprint for session in sessions}
         if current != previous:
             print(json.dumps(summarize_sessions(sessions), ensure_ascii=False, indent=2))
@@ -124,7 +134,7 @@ def watch_sessions(sessions_dir: Path, duration: float, interval: float) -> int:
         time.sleep(interval)
 
     if not printed_any:
-        summary = summarize_sessions(load_sessions(sessions_dir))
+        summary = summarize_sessions(filter_sessions(load_sessions(sessions_dir), source))
         print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0
 
@@ -135,8 +145,9 @@ def main() -> int:
     parser.add_argument("--sessions-dir", type=Path, default=DEFAULT_SESSIONS_DIR)
     parser.add_argument("--duration", type=float, default=60.0)
     parser.add_argument("--interval", type=float, default=1.0)
+    parser.add_argument("--source", choices=SOURCE_CHOICES, default="all")
     args = parser.parse_args()
-    return watch_sessions(args.sessions_dir, args.duration, args.interval)
+    return watch_sessions(args.sessions_dir, args.duration, args.interval, args.source)
 
 
 def _string_value(payload: dict[str, object], key: str) -> str:
