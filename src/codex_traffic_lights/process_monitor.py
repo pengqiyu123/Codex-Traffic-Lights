@@ -48,7 +48,7 @@ class ProcessMonitor(QThread):
     def _detect_fallback_status(self) -> CodexStatus:
         """Detect Codex status using only process presence as a fallback signal."""
         if self._has_matching_codex_process():
-            return CodexStatus.WORKING
+            return CodexStatus.IDLE
         if self._previous_status in ONLINE_STATUSES:
             return CodexStatus.ERROR
         return CodexStatus.OFFLINE
