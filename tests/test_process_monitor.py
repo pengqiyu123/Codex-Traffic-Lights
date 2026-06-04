@@ -68,21 +68,43 @@ def test_fallback_status_is_offline_when_no_codex_process(
 def test_fallback_status_is_working_when_name_matches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A process name containing the configured name should map to WORKING."""
+    """A process name containing the configured name should map to IDLE only."""
     monitor = make_monitor()
     patch_processes(monkeypatch, [FakeProcess("codex.exe", [])])
 
-    assert monitor._detect_fallback_status() is CodexStatus.WORKING
+    assert monitor._detect_fallback_status() is CodexStatus.IDLE
 
 
 def test_fallback_status_is_working_when_cmdline_matches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A command-line argument containing the configured name should map to WORKING."""
+    """A command-line argument containing the configured name should map to IDLE only."""
     monitor = make_monitor()
     patch_processes(monkeypatch, [FakeProcess("python.exe", ["python", "-m", "codex"])])
 
-    assert monitor._detect_fallback_status() is CodexStatus.WORKING
+    assert monitor._detect_fallback_status() is CodexStatus.IDLE
+
+
+def test_fallback_status_is_idle_for_vscode_app_server_process(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """VSCode Codex app-server presence alone should not mean Codex is working."""
+    monitor = make_monitor()
+    patch_processes(
+        monkeypatch,
+        [
+            FakeProcess(
+                "codex.exe",
+                [
+                    "codex.exe",
+                    "app-server",
+                    "--analytics-default-enabled",
+                ],
+            )
+        ],
+    )
+
+    assert monitor._detect_fallback_status() is CodexStatus.IDLE
 
 
 def test_fallback_status_ignores_own_traffic_lights_process(
