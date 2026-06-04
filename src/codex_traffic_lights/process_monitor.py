@@ -3,13 +3,16 @@
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Mapping
 
 import psutil
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
 
 from codex_traffic_lights.models import AppConfig, CodexStatus
+from codex_traffic_lights.session_models import SessionRegistry, SessionStatus
 from codex_traffic_lights.state_mapper import CodexStateMapper
+from codex_traffic_lights.status_aggregator import aggregate_status
 
 ONLINE_STATUSES: frozenset[CodexStatus] = frozenset(
     {
@@ -31,6 +34,7 @@ class ProcessMonitor(QThread):
         """Create a process monitor using immutable application configuration."""
         super().__init__(parent)
         self.config = config
+        self.registry = SessionRegistry()
         self._previous_status: CodexStatus = CodexStatus.OFFLINE
 
     def run(self) -> None:
@@ -49,10 +53,33 @@ class ProcessMonitor(QThread):
         return CodexStatus.OFFLINE
 
     def apply_app_server_event(self, event: Mapping[str, object]) -> None:
-        """Apply a Codex app-server event and emit when it maps to a new status."""
+        """Apply a Codex app-server event and emit the aggregated product status."""
         mapped_status = CodexStateMapper.map_event(event)
-        if mapped_status is not None:
+        if mapped_status is None:
+            return
+
+        thread_id = _extract_string(event, "threadId", "thread_id")
+        if thread_id is None:
             self._set_status(mapped_status)
+            return
+
+        endpoint_id = (
+            _extract_string(event, "endpointId", "endpoint_id")
+            or self.config.app_server_url
+            or "app-server"
+        )
+        display_name = _display_name_from_event(event, thread_id)
+        self.registry.update(
+            SessionStatus(
+                session_key=f"{endpoint_id}::{thread_id}",
+                thread_id=thread_id,
+                endpoint_id=endpoint_id,
+                display_name=display_name,
+                status=mapped_status,
+                last_updated=time.time(),
+            )
+        )
+        self._set_status(aggregate_status(self.registry.get_all()))
 
     def _set_status(self, status: CodexStatus) -> None:
         """Update previous status and emit only when the value changes."""
@@ -96,3 +123,36 @@ def _is_traffic_lights_process(name: object, command_line: list[str]) -> bool:
         for value in values
         for self_token in SELF_PROCESS_TOKENS
     )
+
+
+def _extract_string(mapping: Mapping[str, object], *keys: str) -> str | None:
+    """Extract the first non-empty string value from a mapping."""
+    for key in keys:
+        value = mapping.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _display_name_from_event(event: Mapping[str, object], fallback: str) -> str:
+    """Return a short display name for thread-scoped app-server events."""
+    for key in ("display_name", "name", "workspace", "repo", "repository"):
+        value = event.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+
+    cwd = event.get("cwd")
+    if isinstance(cwd, str) and cwd.strip():
+        basename = _path_basename(cwd)
+        if basename:
+            return basename
+
+    return fallback[:12] if len(fallback) > 12 else fallback
+
+
+def _path_basename(value: str) -> str:
+    """Extract a basename from POSIX or Windows-looking paths."""
+    normalized = value.replace("\\", "/").rstrip("/")
+    if not normalized:
+        return ""
+    return normalized.rsplit("/", 1)[-1]
