@@ -151,3 +151,40 @@ def test_status_changed_emits_only_when_status_changes() -> None:
         CodexStatus.IDLE,
         CodexStatus.WORKING,
     ]
+
+
+def test_apply_app_server_event_updates_registry_and_aggregates_status() -> None:
+    """Thread-scoped app-server events should update registry and emit aggregate status."""
+    monitor = make_monitor()
+    spy = QSignalSpy(monitor.status_changed)
+
+    monitor.apply_app_server_event(
+        {
+            "endpointId": "vscode-main",
+            "threadId": "thread-a",
+            "cwd": "D:/work/repo-a",
+            "status": {"type": "active", "activeFlags": []},
+        }
+    )
+    monitor.apply_app_server_event(
+        {
+            "endpointId": "vscode-main",
+            "threadId": "thread-b",
+            "cwd": "D:/work/repo-b",
+            "status": {"type": "systemError"},
+        }
+    )
+
+    first_session = monitor.registry.get("vscode-main::thread-a")
+    second_session = monitor.registry.get("vscode-main::thread-b")
+
+    assert first_session is not None
+    assert first_session.display_name == "repo-a"
+    assert first_session.status is CodexStatus.WORKING
+    assert second_session is not None
+    assert second_session.display_name == "repo-b"
+    assert second_session.status is CodexStatus.ERROR
+    assert [arguments[0] for arguments in spy] == [
+        CodexStatus.WORKING,
+        CodexStatus.ERROR,
+    ]
