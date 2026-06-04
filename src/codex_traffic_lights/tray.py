@@ -4,9 +4,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PyQt5.QtCore import QObject, Qt
-from PyQt5.QtGui import QColor, QIcon, QPainter, QPixmap
+from PyQt5.QtCore import QObject, QRectF, Qt
+from PyQt5.QtGui import QIcon, QPainter, QPixmap
 from PyQt5.QtWidgets import QAction, QApplication, QMenu, QSystemTrayIcon, QWidget
+
+from codex_traffic_lights.widgets.codex_mark import paint_codex_mark
 
 ICON_PATH = Path(__file__).resolve().parent / "resources" / "icons" / "app.ico"
 
@@ -78,12 +80,6 @@ def _load_icon() -> QIcon:
     pixmap.fill(Qt.transparent)
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.Antialiasing)
-    painter.setPen(Qt.NoPen)
-    painter.setBrush(QColor("#FF4444"))
-    painter.drawEllipse(10, 3, 12, 12)
-    painter.setBrush(QColor("#FFD700"))
-    painter.drawEllipse(10, 10, 12, 12)
-    painter.setBrush(QColor("#44FF44"))
-    painter.drawEllipse(10, 17, 12, 12)
+    paint_codex_mark(painter, QRectF(2, 2, 28, 28), with_shadow=False)
     painter.end()
     return QIcon(pixmap)

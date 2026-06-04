@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QWidget
 
-from codex_traffic_lights.tray import TrayIcon
+from codex_traffic_lights.tray import ICON_PATH, TrayIcon, _load_icon
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -31,6 +31,14 @@ def test_tray_icon_builds_required_context_menu() -> None:
         for action in menu.actions()
     ]
     assert labels == ["显示主窗口", "隐藏", "<separator>", "退出"]
+
+
+def test_tray_icon_resource_exists_and_loads() -> None:
+    """Tray icon should load the packaged Codex-style cloud icon resource."""
+    icon = _load_icon()
+
+    assert ICON_PATH.is_file()
+    assert not icon.isNull()
 
 
 def test_tray_menu_actions_show_and_hide_main_window() -> None:
