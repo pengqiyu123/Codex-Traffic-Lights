@@ -141,8 +141,8 @@ def test_main_window_toggles_expanded_frame() -> None:
     window.toggle_expanded()
 
     assert window.is_expanded is True
-    assert window.width() == 232
-    assert window.height() == 400
+    assert window.width() == 272
+    assert window.height() == 420
 
     window.toggle_expanded()
 

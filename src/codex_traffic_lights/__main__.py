@@ -26,6 +26,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     tray = TrayIcon(window)
 
     monitor.status_changed.connect(window.set_status)
+    monitor.sessions_changed.connect(window.set_sessions)
     app.aboutToQuit.connect(lambda: _stop_monitor(monitor))
 
     window.show()

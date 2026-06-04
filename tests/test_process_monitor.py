@@ -157,6 +157,7 @@ def test_apply_app_server_event_updates_registry_and_aggregates_status() -> None
     """Thread-scoped app-server events should update registry and emit aggregate status."""
     monitor = make_monitor()
     spy = QSignalSpy(monitor.status_changed)
+    sessions_spy = QSignalSpy(monitor.sessions_changed)
 
     monitor.apply_app_server_event(
         {
@@ -184,6 +185,7 @@ def test_apply_app_server_event_updates_registry_and_aggregates_status() -> None
     assert second_session is not None
     assert second_session.display_name == "repo-b"
     assert second_session.status is CodexStatus.ERROR
+    assert [len(arguments[0]) for arguments in sessions_spy] == [1, 2]
     assert [arguments[0] for arguments in spy] == [
         CodexStatus.WORKING,
         CodexStatus.ERROR,

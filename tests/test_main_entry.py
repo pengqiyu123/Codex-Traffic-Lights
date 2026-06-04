@@ -83,6 +83,7 @@ def test_main_wires_config_monitor_window_tray_and_exec(
         def __init__(self, config: AppConfig) -> None:
             self.config = config
             self.status_changed = FakeSignal()
+            self.sessions_changed = FakeSignal()
             self.started = False
             self.interrupted = False
             self.waited_ms: int | None = None
@@ -101,6 +102,7 @@ def test_main_wires_config_monitor_window_tray_and_exec(
         def __init__(self) -> None:
             self.shown = False
             self.statuses: list[CodexStatus] = []
+            self.sessions: list[object] | None = None
             created["window"] = self
 
         def show(self) -> None:
@@ -108,6 +110,9 @@ def test_main_wires_config_monitor_window_tray_and_exec(
 
         def set_status(self, status: CodexStatus) -> None:
             self.statuses.append(status)
+
+        def set_sessions(self, sessions: list[object]) -> None:
+            self.sessions = sessions
 
     class FakeTray:
         def __init__(self, window: FakeWindow) -> None:
@@ -145,6 +150,8 @@ def test_main_wires_config_monitor_window_tray_and_exec(
 
     monitor.status_changed.connected_slot(CodexStatus.WAITING_APPROVAL)
     assert window.statuses == [CodexStatus.WAITING_APPROVAL]
+    monitor.sessions_changed.connected_slot([])
+    assert window.sessions == []
 
 
 def test_entrypoint_file_stays_small() -> None:

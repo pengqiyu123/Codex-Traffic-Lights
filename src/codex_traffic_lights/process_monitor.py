@@ -29,6 +29,7 @@ class ProcessMonitor(QThread):
     """Monitor Codex process state and emit product status changes."""
 
     status_changed = pyqtSignal(CodexStatus)
+    sessions_changed = pyqtSignal(list)
 
     def __init__(self, config: AppConfig, parent: QObject | None = None) -> None:
         """Create a process monitor using immutable application configuration."""
@@ -79,6 +80,7 @@ class ProcessMonitor(QThread):
                 last_updated=time.time(),
             )
         )
+        self.sessions_changed.emit(self.registry.get_all())
         self._set_status(aggregate_status(self.registry.get_all()))
 
     def _set_status(self, status: CodexStatus) -> None:

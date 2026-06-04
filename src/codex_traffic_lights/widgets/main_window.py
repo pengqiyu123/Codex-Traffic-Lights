@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 from PyQt5.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QRect, Qt
-from PyQt5.QtGui import QColor, QFont, QMouseEvent, QPainter, QPainterPath, QPalette, QPen
-from PyQt5.QtWidgets import QApplication, QHBoxLayout, QLabel, QVBoxLayout, QWidget
+from PyQt5.QtGui import QColor, QKeyEvent, QMouseEvent, QPainter, QPainterPath, QPen
+from PyQt5.QtWidgets import QApplication, QFrame, QHBoxLayout, QVBoxLayout, QWidget
 
 from codex_traffic_lights.animation.engine import LightAnimationEngine
 from codex_traffic_lights.models import CodexStatus
+from codex_traffic_lights.session_models import SessionStatus
+from codex_traffic_lights.status_aggregator import aggregate_display_text, aggregate_status
 from codex_traffic_lights.widgets.header import HeaderWidget
+from codex_traffic_lights.widgets.session_matrix import SessionMatrixWidget
 from codex_traffic_lights.widgets.side_buttons import SideButtonsWidget
 from codex_traffic_lights.widgets.status_bar import StatusBarWidget
 from codex_traffic_lights.widgets.traffic_light import (
@@ -25,8 +28,9 @@ SCALE_STEP = 0.1
 BASE_BODY_WIDTH = 72
 BASE_BUTTON_WIDTH = 32
 BASE_HEIGHT = 220
-EXPANDED_BODY_WIDTH = 200
-EXPANDED_HEIGHT = 400
+EXPANDED_BODY_WIDTH = 240
+EXPANDED_HEIGHT = 420
+EXPANDED_GLOBAL_HEIGHT = 180
 EDGE_THRESHOLD = 8
 EDGE_VISIBLE_WIDTH = 8
 ANIMATION_DURATION_MS = 200
@@ -75,6 +79,8 @@ class FramelessMainWindow(QWidget):
         self._hidden_edge: str | None = None
         self._move_animation: QPropertyAnimation | None = None
         self._geometry_animation: QPropertyAnimation | None = None
+        self._current_status = CodexStatus.OFFLINE
+        self._sessions: list[SessionStatus] = []
 
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint | Qt.Tool)
         self.setAttribute(Qt.WA_TranslucentBackground)
@@ -82,6 +88,7 @@ class FramelessMainWindow(QWidget):
         self.header = HeaderWidget()
         self.traffic_light = TrafficLightWidget()
         self.status_bar = StatusBarWidget()
+        self.session_matrix = SessionMatrixWidget()
         self.side_buttons = SideButtonsWidget()
         self.animation_engine = LightAnimationEngine(self.traffic_light)
 
@@ -94,14 +101,13 @@ class FramelessMainWindow(QWidget):
         body_layout.addWidget(self.traffic_light, 1)
         body_layout.addWidget(self.status_bar)
 
-        self._expanded_placeholder = QLabel("多会话面板预留")
-        self._expanded_placeholder.setAlignment(Qt.AlignCenter)
-        self._expanded_placeholder.setFont(QFont("Consolas", 10))
-        placeholder_palette = self._expanded_placeholder.palette()
-        placeholder_palette.setColor(QPalette.WindowText, QColor("#3A3A42"))
-        self._expanded_placeholder.setPalette(placeholder_palette)
-        self._expanded_placeholder.hide()
-        body_layout.addWidget(self._expanded_placeholder)
+        self._divider = QFrame()
+        self._divider.setFixedHeight(1)
+        self._divider.setStyleSheet("background: #2A2A30; border: 0;")
+        self._divider.hide()
+        self.session_matrix.hide()
+        body_layout.addWidget(self._divider)
+        body_layout.addWidget(self.session_matrix, 1)
 
         root_layout = QHBoxLayout(self)
         root_layout.setContentsMargins(0, 0, 0, 0)
@@ -118,11 +124,19 @@ class FramelessMainWindow(QWidget):
 
     def set_status(self, status: CodexStatus) -> None:
         """Update status text and light animation from a product status."""
+        self._current_status = status
         status_color = _STATUS_COLORS[status]
-        self.status_bar.set_status_text(status.label)
+        self.status_bar.set_status_text(aggregate_display_text(self._sessions, status))
         self.status_bar.set_status_color(status_color)
         self.side_buttons.set_accent_color(status_color)
         self.animation_engine.set_status(status)
+
+    def set_sessions(self, sessions: list[SessionStatus]) -> None:
+        """Update expanded matrix sessions and compact aggregate text."""
+        self._sessions = list(sessions)
+        self.session_matrix.set_sessions(self._sessions)
+        aggregate = aggregate_status(self._sessions)
+        self.set_status(aggregate)
 
     def zoom_in(self) -> None:
         """Increase window scale by one step."""
@@ -138,10 +152,27 @@ class FramelessMainWindow(QWidget):
         self._apply_size(animated=False)
 
     def toggle_expanded(self) -> None:
-        """Toggle the reserved expanded-mode frame."""
+        """Toggle the expanded multi-session matrix frame."""
         self.is_expanded = not self.is_expanded
-        self._expanded_placeholder.setVisible(self.is_expanded)
+        self.header.setVisible(not self.is_expanded)
+        self._divider.setVisible(self.is_expanded)
+        self.session_matrix.setVisible(self.is_expanded)
+        if self.is_expanded:
+            self.traffic_light.setFixedHeight(EXPANDED_GLOBAL_HEIGHT - 42)
+            self.traffic_light.set_lamp_diameter(22)
+        else:
+            self.traffic_light.set_lamp_diameter(None)
+            self.traffic_light.setMinimumSize(72, 120)
+            self.traffic_light.setMaximumHeight(16777215)
         self._apply_size(animated=True)
+
+    def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
+        """Collapse expanded mode with Escape."""
+        if event.key() == Qt.Key_Escape and self.is_expanded:
+            self.toggle_expanded()
+            event.accept()
+            return
+        super().keyPressEvent(event)
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         """Toggle expanded mode when the lamp area is double-clicked."""

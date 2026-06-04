@@ -10,7 +10,6 @@ from PyQt5.QtWidgets import QApplication
 from codex_traffic_lights.models import CodexStatus
 from codex_traffic_lights.session_models import SessionStatus
 from codex_traffic_lights.widgets.main_window import FramelessMainWindow
-from codex_traffic_lights.widgets.session_column import SessionColumnWidget
 from codex_traffic_lights.widgets.session_matrix import MAX_VISIBLE_SESSIONS, SessionMatrixWidget
 
 
@@ -75,7 +74,7 @@ def test_main_window_expanded_mode_uses_matrix_and_sessions() -> None:
     assert window._body.width() == 240
     assert window.width() == 272
     assert window.height() == 420
-    assert window.session_matrix.isVisible()
+    assert not window.session_matrix.isHidden()
     assert len(window.session_matrix.session_columns) == 2
     assert window.status_bar.status_text == "待审批确认 · 2 会话"
 

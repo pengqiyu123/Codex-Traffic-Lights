@@ -69,6 +69,7 @@ class AppServerConnector(QThread):
     RETRY_INTERVAL_MS = 5000
 
     session_updated = pyqtSignal(SessionStatus)
+    sessions_changed = pyqtSignal(list)
     status_changed = pyqtSignal(CodexStatus)
 
     def __init__(
@@ -175,6 +176,7 @@ class AppServerConnector(QThread):
         endpoint_id = _extract_string(params, "endpointId", "endpoint_id") or self.endpoint_id
         self.registry.remove(_session_key(endpoint_id, thread_id))
         self._display_names.pop(thread_id, None)
+        self.sessions_changed.emit(self.registry.get_all())
         self._emit_aggregate_if_changed()
 
     def _handle_status_changed(self, params: Mapping[str, object]) -> None:
@@ -255,6 +257,7 @@ class AppServerConnector(QThread):
         """Store one session and emit session plus aggregate status changes."""
         self.registry.update(session)
         self.session_updated.emit(session)
+        self.sessions_changed.emit(self.registry.get_all())
         self._emit_aggregate_if_changed()
 
     def _emit_aggregate_if_changed(self) -> None:

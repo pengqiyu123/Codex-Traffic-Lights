@@ -46,6 +46,12 @@ class TrafficLightWidget(QWidget):
         self.setMinimumSize(72, 120)
         self._opacities: list[float] = [1.0, 0.1, 0.1]
         self._effects: list[LightEffectParams | None] = [None, None, None]
+        self._lamp_diameter: int | None = None
+
+    def set_lamp_diameter(self, diameter: int | None) -> None:
+        """Set an explicit lamp diameter, or None to use compact auto sizing."""
+        self._lamp_diameter = diameter
+        self.update()
 
     @property
     def red_opacity(self) -> float:
@@ -116,8 +122,8 @@ class TrafficLightWidget(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(Qt.NoPen)
 
-        diameter = min(36, max(28, int(self.width() * 0.50)))
-        gap = 12
+        diameter = self._lamp_diameter or min(36, max(28, int(self.width() * 0.50)))
+        gap = 8 if self._lamp_diameter is not None else 12
         total_height = diameter * 3 + gap * 2
         top = max(0, (self.height() - total_height) / 2)
         left = (self.width() - diameter) / 2

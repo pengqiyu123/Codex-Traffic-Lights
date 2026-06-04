@@ -181,6 +181,7 @@ def test_handle_notification_updates_registry_and_emits_session_status() -> None
     registry = SessionRegistry()
     connector = AppServerConnector(AppConfig(app_server_url="ws://127.0.0.1:18731"), registry)
     session_spy = QSignalSpy(connector.session_updated)
+    sessions_spy = QSignalSpy(connector.sessions_changed)
     status_spy = QSignalSpy(connector.status_changed)
 
     connector._handle_notification(
@@ -197,6 +198,8 @@ def test_handle_notification_updates_registry_and_emits_session_status() -> None
     assert session.status is CodexStatus.WAITING_APPROVAL
     assert session.display_name == "thread-a"
     assert len(session_spy) == 1
+    assert len(sessions_spy) == 1
+    assert sessions_spy[0][0][0] == session
     assert isinstance(session_spy[0][0], SessionStatus)
     assert status_spy[0][0] is CodexStatus.WAITING_APPROVAL
 
@@ -287,6 +290,7 @@ def test_thread_started_and_closed_update_registry_and_aggregate_status() -> Non
     """Thread lifecycle notifications should add and remove registry sessions."""
     registry = SessionRegistry()
     connector = AppServerConnector(AppConfig(app_server_url="ws://127.0.0.1:18731"), registry)
+    sessions_spy = QSignalSpy(connector.sessions_changed)
     status_spy = QSignalSpy(connector.status_changed)
 
     connector._handle_thread_started(
@@ -301,6 +305,7 @@ def test_thread_started_and_closed_update_registry_and_aggregate_status() -> Non
     connector._handle_thread_closed({"threadId": "thread-a"})
 
     assert registry.count() == 0
+    assert [len(arguments[0]) for arguments in sessions_spy] == [1, 0]
     assert [arguments[0] for arguments in status_spy] == [
         CodexStatus.WORKING,
         CodexStatus.OFFLINE,
