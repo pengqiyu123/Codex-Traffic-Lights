@@ -82,12 +82,36 @@ def test_main_wires_config_monitor_window_tray_and_exec(
     class FakeMonitor:
         def __init__(self, config: AppConfig) -> None:
             self.config = config
+            self.registry = object()
             self.status_changed = FakeSignal()
             self.sessions_changed = FakeSignal()
             self.started = False
             self.interrupted = False
             self.waited_ms: int | None = None
+            self.registry_updates = 0
             created["monitor"] = self
+
+        def start(self) -> None:
+            self.started = True
+
+        def apply_registry_update(self) -> None:
+            self.registry_updates += 1
+
+        def requestInterruption(self) -> None:  # noqa: N802
+            self.interrupted = True
+
+        def wait(self, timeout_ms: int) -> None:
+            self.waited_ms = timeout_ms
+
+    class FakeHookWatcher:
+        def __init__(self, config: AppConfig, registry: object) -> None:
+            self.config = config
+            self.registry = registry
+            self.status_changed = FakeSignal()
+            self.started = False
+            self.interrupted = False
+            self.waited_ms: int | None = None
+            created["hook_watcher"] = self
 
         def start(self) -> None:
             self.started = True
@@ -126,6 +150,7 @@ def test_main_wires_config_monitor_window_tray_and_exec(
     monkeypatch.setattr(entry, "QApplication", FakeApplication)
     monkeypatch.setattr(entry, "ConfigManager", FakeConfigManager)
     monkeypatch.setattr(entry, "ProcessMonitor", FakeMonitor)
+    monkeypatch.setattr(entry, "HookFileWatcher", FakeHookWatcher)
     monkeypatch.setattr(entry, "FramelessMainWindow", FakeWindow)
     monkeypatch.setattr(entry, "TrayIcon", FakeTray)
     monkeypatch.setattr(entry.sys, "argv", ["codex-traffic-lights"])
@@ -134,6 +159,7 @@ def test_main_wires_config_monitor_window_tray_and_exec(
 
     app = created["app"]
     monitor = created["monitor"]
+    hook_watcher = created["hook_watcher"]
     window = created["window"]
     tray = created["tray"]
     assert exit_code == 23
@@ -144,6 +170,11 @@ def test_main_wires_config_monitor_window_tray_and_exec(
     assert monitor.started is True
     assert monitor.interrupted is True
     assert monitor.waited_ms == 1000
+    assert hook_watcher.config is loaded_config
+    assert hook_watcher.registry is monitor.registry
+    assert hook_watcher.started is True
+    assert hook_watcher.interrupted is True
+    assert hook_watcher.waited_ms == 1000
     assert window.shown is True
     assert tray.window is window
     assert tray.shown is True
@@ -152,6 +183,9 @@ def test_main_wires_config_monitor_window_tray_and_exec(
     assert window.statuses == [CodexStatus.WAITING_APPROVAL]
     monitor.sessions_changed.connected_slot([])
     assert window.sessions == []
+
+    hook_watcher.status_changed.connected_slot(CodexStatus.WORKING)
+    assert monitor.registry_updates == 1
 
 
 def test_entrypoint_file_stays_small() -> None:

@@ -42,8 +42,15 @@ class ProcessMonitor(QThread):
         """Poll fallback process state until the thread is interrupted."""
         poll_interval_ms = max(1, self.config.poll_interval_ms)
         while not self.isInterruptionRequested():
-            self._set_status(self._detect_fallback_status())
+            self._set_status(self._detect_status())
             self.msleep(poll_interval_ms)
+
+    def _detect_status(self) -> CodexStatus:
+        """Return precise session aggregate status, falling back to process presence."""
+        sessions = self.registry.get_all()
+        if sessions:
+            return aggregate_status(sessions)
+        return self._detect_fallback_status()
 
     def _detect_fallback_status(self) -> CodexStatus:
         """Detect Codex status using only process presence as a fallback signal."""
@@ -82,6 +89,12 @@ class ProcessMonitor(QThread):
         )
         self.sessions_changed.emit(self.registry.get_all())
         self._set_status(aggregate_status(self.registry.get_all()))
+
+    def apply_registry_update(self) -> None:
+        """Emit sessions and aggregate status after an external registry update."""
+        sessions = self.registry.get_all()
+        self.sessions_changed.emit(sessions)
+        self._set_status(aggregate_status(sessions))
 
     def _set_status(self, status: CodexStatus) -> None:
         """Update previous status and emit only when the value changes."""

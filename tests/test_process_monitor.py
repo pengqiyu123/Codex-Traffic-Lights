@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import QApplication
 
 from codex_traffic_lights.models import AppConfig, CodexStatus
 from codex_traffic_lights.process_monitor import ProcessMonitor
+from codex_traffic_lights.session_models import SessionStatus
 
 
 @dataclass
@@ -55,6 +56,18 @@ def patch_processes(
     )
 
 
+def make_session(status: CodexStatus) -> SessionStatus:
+    """Create one tracked session for registry priority tests."""
+    return SessionStatus(
+        session_key="endpoint::thread-a",
+        thread_id="thread-a",
+        endpoint_id="endpoint",
+        display_name="repo-a",
+        status=status,
+        last_updated=1.0,
+    )
+
+
 def test_fallback_status_is_offline_when_no_codex_process(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -65,7 +78,7 @@ def test_fallback_status_is_offline_when_no_codex_process(
     assert monitor._detect_fallback_status() is CodexStatus.OFFLINE
 
 
-def test_fallback_status_is_working_when_name_matches(
+def test_fallback_status_is_idle_when_name_matches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A process name containing the configured name should map to IDLE only."""
@@ -75,7 +88,7 @@ def test_fallback_status_is_working_when_name_matches(
     assert monitor._detect_fallback_status() is CodexStatus.IDLE
 
 
-def test_fallback_status_is_working_when_cmdline_matches(
+def test_fallback_status_is_idle_when_cmdline_matches(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A command-line argument containing the configured name should map to IDLE only."""
@@ -129,6 +142,31 @@ def test_fallback_status_is_error_when_previous_online_now_offline(
     patch_processes(monkeypatch, [])
 
     assert monitor._detect_fallback_status() is CodexStatus.ERROR
+
+
+def test_tracked_session_status_takes_priority_over_process_fallback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Precise session state should not be overwritten by process presence fallback."""
+    monitor = make_monitor()
+    monitor.registry.update(make_session(CodexStatus.WORKING))
+    patch_processes(monkeypatch, [FakeProcess("codex.exe", ["codex.exe"])])
+
+    assert monitor._detect_status() is CodexStatus.WORKING
+
+
+def test_apply_registry_update_emits_sessions_and_aggregate_status() -> None:
+    """External precise data sources should publish sessions plus aggregate status."""
+    monitor = make_monitor()
+    monitor.registry.update(make_session(CodexStatus.WAITING_APPROVAL))
+    status_spy = QSignalSpy(monitor.status_changed)
+    sessions_spy = QSignalSpy(monitor.sessions_changed)
+
+    monitor.apply_registry_update()
+
+    assert [arguments[0] for arguments in status_spy] == [CodexStatus.WAITING_APPROVAL]
+    assert len(sessions_spy) == 1
+    assert len(sessions_spy[0][0]) == 1
 
 
 @pytest.mark.parametrize(
