@@ -20,8 +20,8 @@ class LightEffectParams(NamedTuple):
 
 OFF_EFFECT = LightEffectParams(
     mode=LightMode.OFF,
-    min_opacity=0.08,
-    max_opacity=0.12,
+    min_opacity=0.03,
+    max_opacity=0.06,
     period_ms=0,
     halo_enabled=False,
     halo_spread=0,
@@ -52,16 +52,16 @@ SLOW_BREATH_EFFECT = LightEffectParams(
 )
 INTERMITTENT_BLINK_EFFECT = LightEffectParams(
     mode=LightMode.INTERMITTENT_BLINK,
-    min_opacity=0.1,
-    max_opacity=0.6,
+    min_opacity=0.05,
+    max_opacity=0.75,
     period_ms=1000,
     halo_enabled=True,
     halo_spread=6,
 )
 SLOW_FLASH_EFFECT = LightEffectParams(
     mode=LightMode.SLOW_FLASH,
-    min_opacity=0.2,
-    max_opacity=0.8,
+    min_opacity=0.08,
+    max_opacity=0.95,
     period_ms=2000,
     halo_enabled=True,
     halo_spread=10,

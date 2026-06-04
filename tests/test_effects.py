@@ -30,11 +30,11 @@ def test_each_status_has_three_legal_light_effects() -> None:
 @pytest.mark.parametrize(
     ("mode", "min_opacity", "max_opacity", "period_ms"),
     [
-        (LightMode.OFF, 0.08, 0.12, 0),
+        (LightMode.OFF, 0.03, 0.06, 0),
         (LightMode.SOLID, 0.95, 1.0, 0),
         (LightMode.SLOW_BREATH, 0.3, 1.0, 3000),
-        (LightMode.INTERMITTENT_BLINK, 0.1, 0.6, 1000),
-        (LightMode.SLOW_FLASH, 0.2, 0.8, 2000),
+        (LightMode.INTERMITTENT_BLINK, 0.05, 0.75, 1000),
+        (LightMode.SLOW_FLASH, 0.08, 0.95, 2000),
         (LightMode.FAST_FLASH, 0.2, 1.0, 300),
     ],
 )
@@ -44,7 +44,7 @@ def test_effect_params_match_prd_mode_values(
     max_opacity: float,
     period_ms: int,
 ) -> None:
-    """Mode presets should match the numeric values in the PRD."""
+    """Mode presets should match the current visual contrast specification."""
     matching_effect = next(
         effect
         for effects in STATUS_EFFECTS.values()
