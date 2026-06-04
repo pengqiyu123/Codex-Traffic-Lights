@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
 import shutil
 import subprocess
 import sys
@@ -38,6 +40,9 @@ CLAUDE_EVENTS: tuple[str, ...] = (
     "SessionEnd",
 )
 
+IMPORT_CHECK_CODE = "import codex_traffic_lights.hook_scripts"
+logger = logging.getLogger(__name__)
+
 
 class HookInstaller:
     """Manage user-level hook config entries for the file bridge."""
@@ -49,7 +54,10 @@ class HookInstaller:
     ) -> None:
         """Create an installer rooted at a user home directory."""
         self.home = Path.home() if home is None else home
-        self.python_executable = sys.executable if python_executable is None else python_executable
+        if python_executable is not None:
+            self.python_executable = python_executable
+        else:
+            self.python_executable = resolve_python_executable()
 
     def install_codex_hooks(self) -> None:
         """Install Codex CLI hook commands into ~/.codex/hooks.json."""
@@ -122,6 +130,92 @@ def _load_json_object(path: Path) -> dict[str, Any]:
     except (OSError, json.JSONDecodeError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def resolve_python_executable() -> str:
+    """Return a Python executable that can import the hook bridge package."""
+    candidates = _python_candidates()
+    for candidate in candidates:
+        if verify_can_import_hook_scripts(candidate):
+            if candidate != sys.executable:
+                logger.info(
+                    "Switching hook Python executable from %s to %s",
+                    sys.executable,
+                    candidate,
+                )
+            return candidate
+
+    logger.warning(
+        "No hook Python candidate can import codex_traffic_lights.hook_scripts; "
+        "falling back to %s",
+        sys.executable,
+    )
+    return sys.executable
+
+
+def verify_can_import_hook_scripts(python_executable: str) -> bool:
+    """Return True if a Python executable can import the hook script package."""
+    try:
+        completed = subprocess.run(
+            [python_executable, "-c", IMPORT_CHECK_CODE],
+            check=False,
+            capture_output=True,
+            env=_import_check_environment(),
+            text=True,
+            timeout=10,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return completed.returncode == 0
+
+
+def _python_candidates() -> list[str]:
+    """Return Python candidates in priority order for hook registration."""
+    candidates = [sys.executable]
+    project_root = _find_project_root()
+    if project_root is not None:
+        venv_python = _project_venv_python(project_root)
+        if venv_python is not None:
+            candidates.append(str(venv_python))
+    return _dedupe_strings(candidates)
+
+
+def _find_project_root() -> Path | None:
+    """Find the project root by walking upward from this file to pyproject.toml."""
+    for parent in Path(__file__).resolve().parents:
+        if (parent / "pyproject.toml").is_file():
+            return parent
+    return None
+
+
+def _project_venv_python(project_root: Path) -> Path | None:
+    """Return the project-local virtualenv Python path for this platform."""
+    relative_path = (
+        Path(".venv") / "Scripts" / "python.exe"
+        if sys.platform == "win32"
+        else Path(".venv") / "bin" / "python"
+    )
+    candidate = project_root / relative_path
+    return candidate if candidate.is_file() else None
+
+
+def _dedupe_strings(values: list[str]) -> list[str]:
+    """Return strings once, preserving order."""
+    result: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        if value in seen:
+            continue
+        seen.add(value)
+        result.append(value)
+    return result
+
+
+def _import_check_environment() -> dict[str, str]:
+    """Return an environment that does not rely on a caller-provided PYTHONPATH."""
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    return env
 
 
 def _ensure_hooks_object(data: dict[str, Any]) -> dict[str, Any]:

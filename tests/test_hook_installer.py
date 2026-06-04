@@ -5,7 +5,14 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from codex_traffic_lights.hook_installer import HookInstaller
+import pytest
+
+from codex_traffic_lights import hook_installer
+from codex_traffic_lights.hook_installer import (
+    HookInstaller,
+    resolve_python_executable,
+    verify_can_import_hook_scripts,
+)
 
 
 def _read_json(path: Path) -> dict[str, object]:
@@ -112,3 +119,85 @@ def test_uninstall_removes_only_our_hook_entries(tmp_path: Path) -> None:
         for entry in event_entries
     )
     assert installer.is_installed() is False
+
+
+def test_resolve_picks_sys_executable_when_it_works(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Resolver should prefer the current interpreter when it can import hook scripts."""
+    checked: list[str] = []
+
+    def fake_verify(candidate: str) -> bool:
+        checked.append(candidate)
+        return True
+
+    monkeypatch.setattr(hook_installer.sys, "executable", r"C:\Python\python.exe")
+    monkeypatch.setattr(hook_installer, "verify_can_import_hook_scripts", fake_verify)
+
+    assert resolve_python_executable() == r"C:\Python\python.exe"
+    assert checked == [r"C:\Python\python.exe"]
+
+
+def test_resolve_falls_back_to_venv_python(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Resolver should switch to project .venv Python when sys.executable cannot import."""
+    project_root = tmp_path
+    (project_root / "pyproject.toml").write_text("[project]\nname='test'\n", encoding="utf-8")
+    venv_python = project_root / ".venv" / "Scripts" / "python.exe"
+    venv_python.parent.mkdir(parents=True)
+    venv_python.write_text("", encoding="utf-8")
+
+    def fake_verify(candidate: str) -> bool:
+        return Path(candidate) == venv_python
+
+    monkeypatch.setattr(hook_installer.sys, "executable", r"C:\Python\python.exe")
+    monkeypatch.setattr(hook_installer, "_find_project_root", lambda: project_root)
+    monkeypatch.setattr(hook_installer, "verify_can_import_hook_scripts", fake_verify)
+
+    with caplog.at_level("INFO"):
+        assert resolve_python_executable() == str(venv_python)
+
+    assert "Switching hook Python executable" in caplog.text
+
+
+def test_resolve_warns_when_no_candidate_works(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Resolver should warn and fall back to sys.executable if no candidate imports."""
+    monkeypatch.setattr(hook_installer.sys, "executable", r"C:\Python\python.exe")
+    monkeypatch.setattr(hook_installer, "verify_can_import_hook_scripts", lambda _: False)
+
+    with caplog.at_level("WARNING"):
+        assert resolve_python_executable() == r"C:\Python\python.exe"
+
+    assert "No hook Python candidate can import codex_traffic_lights.hook_scripts" in caplog.text
+
+
+def test_verify_can_import_returns_true_for_working_python() -> None:
+    """A resolver-selected real Python should be able to import hook scripts."""
+    assert verify_can_import_hook_scripts(resolve_python_executable()) is True
+
+
+def test_verify_can_import_returns_false_for_bad_path(tmp_path: Path) -> None:
+    """A missing Python path should fail verification instead of raising."""
+    assert verify_can_import_hook_scripts(str(tmp_path / "missing-python.exe")) is False
+
+
+def test_explicit_python_executable_skips_resolver(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Tests and callers passing python_executable should keep the existing direct behavior."""
+    monkeypatch.setattr(
+        hook_installer,
+        "resolve_python_executable",
+        lambda: pytest.fail("resolver should not be called"),
+    )
+
+    installer = HookInstaller(home=tmp_path, python_executable="python")
+
+    assert installer.python_executable == "python"
