@@ -6,6 +6,7 @@ import json
 import time
 from pathlib import Path
 
+import codex_traffic_lights.hook_bridge as hook_bridge
 from codex_traffic_lights.hook_bridge import HookFileWatcher
 from codex_traffic_lights.models import AppConfig, CodexStatus
 from codex_traffic_lights.session_models import SessionRegistry
@@ -108,3 +109,23 @@ def test_status_changed_emits_only_when_aggregate_status_changes(tmp_path: Path)
     watcher._scan_sessions_dir()
 
     assert emitted == [CodexStatus.WORKING, CodexStatus.ERROR]
+
+
+def test_run_uses_fixed_one_second_poll_interval(monkeypatch) -> None:  # type: ignore[no-untyped-def]
+    """Hook file polling should follow the Task 9A one-second scan contract."""
+    registry = SessionRegistry()
+    watcher = HookFileWatcher(AppConfig(poll_interval_ms=10_000), registry)
+    sleep_calls: list[float] = []
+
+    def stop_after_scan() -> None:
+        watcher.requestInterruption()
+
+    def record_sleep(seconds: float) -> None:
+        sleep_calls.append(seconds)
+
+    monkeypatch.setattr(watcher, "_scan_sessions_dir", stop_after_scan)
+    monkeypatch.setattr(hook_bridge.time, "sleep", record_sleep)
+
+    watcher.run()
+
+    assert sleep_calls == [HookFileWatcher.POLL_INTERVAL_SECONDS]

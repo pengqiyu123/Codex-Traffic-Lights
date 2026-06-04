@@ -63,7 +63,10 @@ def test_map_claude_event_covers_confirmed_events(
 @pytest.mark.parametrize(
     ("payload", "expected"),
     [
-        ({"session_id": "session-a", "conversation_id": "conv", "thread_id": "thread"}, "session-a"),
+        (
+            {"session_id": "session-a", "conversation_id": "conv", "thread_id": "thread"},
+            "session-a",
+        ),
         ({"conversation_id": "conv", "thread_id": "thread"}, "conv"),
         ({"thread_id": "thread"}, "thread"),
         ({"cwd": "D:/work/repo-name"}, "repo-name"),
