@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 import pytest
 from PyQt5.QtTest import QSignalSpy
@@ -16,6 +17,7 @@ from codex_traffic_lights.vscode_ipc import (
     IpcReadTimeoutError,
     VSCodeIpcConnector,
     _product_status,
+    _safe_display_name,
     build_initialize_request,
     encode_frame,
     summarize_ipc_message,
@@ -163,6 +165,56 @@ def test_product_status_maps_all_six_product_states(
 ) -> None:
     """The transcript mapping should cover the six product statuses."""
     assert _product_status(last_turn_status, list(approval), list(user_input)) is expected
+
+
+def test_recent_in_progress_status_stays_working() -> None:
+    """A fresh inProgress turn should remain WORKING."""
+    now_ms = 1_700_000_000_000
+    started_at_ms = now_ms - 10_000
+
+    status = _product_status("inProgress", [], [], started_at_ms, now_ms)
+
+    assert status is CodexStatus.WORKING
+
+
+def test_stale_in_progress_status_downgrades_to_idle() -> None:
+    """Old hanging inProgress turns should not keep the global lamp yellow forever."""
+    now_ms = 1_700_000_000_000
+    started_at_ms = now_ms - 600_000
+
+    status = _product_status("inProgress", [], [], started_at_ms, now_ms)
+
+    assert status is CodexStatus.IDLE
+
+
+def test_snapshot_stale_in_progress_turn_maps_to_idle() -> None:
+    """Old IPC snapshots should not reintroduce stale WORKING sessions at startup."""
+    store = ConversationStore()
+
+    transcript = summarize_ipc_message(
+        _broadcast(
+            "thread-a",
+            {
+                "type": "snapshot",
+                "revision": 1,
+                "conversationState": {
+                    "id": "thread-a",
+                    "turns": [
+                        {
+                            "status": "inProgress",
+                            "turnStartedAtMs": int((time.time() - 600.0) * 1000),
+                            "params": {"threadId": "thread-a"},
+                        }
+                    ],
+                },
+            },
+        ),
+        store,
+    )
+
+    assert transcript is not None
+    assert transcript.last_turn_status == "inProgress"
+    assert transcript.product_status is CodexStatus.IDLE
 
 
 def test_snapshot_detects_waiting_signals_without_recording_item_payloads() -> None:
@@ -314,6 +366,51 @@ def test_connector_updates_registry_and_emits_session_signals() -> None:
     assert isinstance(session_spy[0][0], SessionStatus)
     assert sessions_spy[0][0] == [session]
     assert status_spy[0][0] is CodexStatus.WORKING
+
+
+def test_snapshot_display_name_uses_safe_metadata_before_thread_id() -> None:
+    """Known safe metadata should produce readable names instead of opaque ids."""
+    store = ConversationStore()
+    transcript = summarize_ipc_message(
+        _broadcast(
+            "019e8825-161c-7e71-8fda-699303315443",
+            {
+                "type": "snapshot",
+                "revision": 1,
+                "conversationState": {
+                    "id": "019e8825-161c-7e71-8fda-699303315443",
+                    "title": "Code Light",
+                    "turns": [{"status": "completed"}],
+                },
+            },
+        ),
+        store,
+    )
+
+    assert transcript is not None
+    assert transcript.display_name == "Code Light"
+
+
+def test_safe_display_name_shortens_opaque_conversation_ids() -> None:
+    """UUID-like ids should be converted to a small session label."""
+    assert _safe_display_name("019e8825-161c-7e71-8fda-699303315443", None) == "会话 443"
+
+
+def test_connector_expires_stale_working_sessions_to_idle() -> None:
+    """A stale inProgress IPC session should not keep the global lamp working forever."""
+    registry = SessionRegistry()
+    connector = VSCodeIpcConnector(AppConfig(), registry)
+    status_spy = QSignalSpy(connector.status_changed)
+
+    connector._handle_transcript(  # noqa: SLF001
+        _transcript("thread-a", "local", 1, CodexStatus.WORKING, "inProgress")
+    )
+    connector._expire_stale_working_sessions(now=time.time() + 999.0)  # noqa: SLF001
+
+    session = registry.get("vscode-ipc::thread-a")
+    assert session is not None
+    assert session.status is CodexStatus.IDLE
+    assert status_spy[-1][0] is CodexStatus.IDLE
 
 
 def test_connector_reconnects_after_disconnect_and_emits_status() -> None:
@@ -497,6 +594,7 @@ def _transcript(
     revision: int,
     product_status: CodexStatus,
     last_turn_status: str,
+    last_turn_started_at_ms: int | None = None,
 ) -> object:
     from codex_traffic_lights.vscode_ipc import StatusTranscript
 
@@ -504,7 +602,9 @@ def _transcript(
         conversation_id=conversation_id,
         revision=revision,
         host_id=host_id,
+        display_name=None,
         last_turn_status=last_turn_status,
+        last_turn_started_at_ms=last_turn_started_at_ms,
         product_status=product_status,
         turn_count=1,
     )

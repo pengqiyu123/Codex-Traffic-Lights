@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import ctypes
 import json
+import re
 import struct
 import sys
 import time
@@ -20,7 +21,7 @@ from collections.abc import Callable, Mapping
 from contextlib import suppress
 from ctypes import wintypes
 from dataclasses import dataclass, field
-from typing import Protocol, Self
+from typing import Protocol
 
 from PyQt5.QtCore import QObject, QThread, pyqtSignal
 
@@ -33,6 +34,7 @@ ENDPOINT_ID = "vscode-ipc"
 INITIALIZING_CLIENT_ID = "initializing-client"
 CONNECTOR_CLIENT_TYPE = "traffic-lights-connector"
 MAX_FRAME_BYTES = 50 * 1024 * 1024
+WORKING_STALE_AFTER_SECONDS = 300.0
 GENERIC_READ = 0x80000000
 GENERIC_WRITE = 0x40000000
 OPEN_EXISTING = 3
@@ -42,6 +44,7 @@ ERROR_IO_PENDING = 997
 WAIT_OBJECT_0 = 0
 WAIT_TIMEOUT = 258
 INFINITE = 0xFFFFFFFF
+OPAQUE_ID_PATTERN = re.compile(r"^[0-9a-fA-F]{8,}-[0-9a-fA-F-]{12,}$")
 
 
 class IpcStream(Protocol):
@@ -67,11 +70,12 @@ class TurnSummary:
 
     status: str | None = None
     thread_id: str | None = None
+    started_at_ms: int | None = None
     item_count: int | None = None
     hook_run_count: int | None = None
 
     @classmethod
-    def from_payload(cls, payload: Mapping[str, object]) -> Self:
+    def from_payload(cls, payload: Mapping[str, object]) -> TurnSummary:
         """Create a sanitized turn summary from a raw turn payload."""
         params = payload.get("params")
         thread_id: str | None = None
@@ -82,6 +86,7 @@ class TurnSummary:
         return cls(
             status=status if isinstance(status, str) else None,
             thread_id=thread_id,
+            started_at_ms=_int_value(payload.get("turnStartedAtMs")),
             item_count=_list_length(payload.get("items")),
             hook_run_count=_list_length(payload.get("hookRuns")),
         )
@@ -91,6 +96,7 @@ class TurnSummary:
         return {
             "status": self.status,
             "threadId": self.thread_id,
+            "startedAtMs": self.started_at_ms,
             "itemCount": self.item_count,
             "hookRunCount": self.hook_run_count,
         }
@@ -101,6 +107,7 @@ class ConversationSummary:
     """Sanitized per-conversation state tracked in memory."""
 
     conversation_id: str
+    display_name: str | None = None
     revision: int | None = None
     host_id: str | None = None
     turns: list[TurnSummary] = field(default_factory=list)
@@ -121,7 +128,9 @@ class StatusTranscript:
     conversation_id: str
     revision: int | None
     host_id: str | None
+    display_name: str | None
     last_turn_status: str | None
+    last_turn_started_at_ms: int | None
     product_status: CodexStatus
     turn_count: int
     approval_signals: tuple[str, ...] = ()
@@ -134,10 +143,12 @@ class StatusTranscript:
         return {
             "source": self.source,
             "conversationId": self.conversation_id,
+            "displayName": self.display_name,
             "hostId": self.host_id,
             "revision": self.revision,
             "lastTurn": {
                 "status": self.last_turn_status,
+                "startedAtMs": self.last_turn_started_at_ms,
             },
             "productStatus": self.product_status.name,
             "turnCount": self.turn_count,
@@ -200,16 +211,18 @@ class ConversationStore:
         change: Mapping[str, object],
     ) -> ConversationSummary:
         state_payload = change.get("conversationState")
+        state_mapping = state_payload if isinstance(state_payload, Mapping) else None
         summary = ConversationSummary(
             conversation_id=conversation_id,
+            display_name=_safe_display_name(conversation_id, state_mapping),
             revision=_int_value(change.get("revision")),
             host_id=host_id,
         )
-        if isinstance(state_payload, Mapping):
-            state_host = state_payload.get("hostId")
+        if state_mapping is not None:
+            state_host = state_mapping.get("hostId")
             if isinstance(state_host, str):
                 summary.host_id = state_host
-            turns = state_payload.get("turns")
+            turns = state_mapping.get("turns")
             if isinstance(turns, list):
                 for turn_index, turn in enumerate(turns):
                     if not isinstance(turn, Mapping):
@@ -266,6 +279,8 @@ class ConversationStore:
             key = path[2]
             if key == "status" and isinstance(value, str):
                 self._ensure_turn(summary, turn_index).status = value
+            elif key == "turnStartedAtMs" and isinstance(value, int):
+                self._ensure_turn(summary, turn_index).started_at_ms = value
             elif key == "items":
                 turn = self._ensure_turn(summary, turn_index)
                 item_index = path[3] if len(path) >= 4 and isinstance(path[3], int) else None
@@ -308,7 +323,11 @@ class ConversationStore:
     def _get_or_create(self, conversation_id: str, host_id: str | None) -> ConversationSummary:
         summary = self._conversations.get(conversation_id)
         if summary is None:
-            summary = ConversationSummary(conversation_id=conversation_id, host_id=host_id)
+            summary = ConversationSummary(
+                conversation_id=conversation_id,
+                display_name=_safe_display_name(conversation_id, None),
+                host_id=host_id,
+            )
             self._conversations[conversation_id] = summary
         elif host_id is not None:
             summary.host_id = host_id
@@ -447,6 +466,7 @@ class VSCodeIpcConnector(QThread):
         self.registry = registry
         self._stream_factory = stream_factory
         self._store = ConversationStore()
+        self._managed_keys: set[str] = set()
         self._previous_status = aggregate_status(self.registry.get_all())
 
     def run(self) -> None:
@@ -497,27 +517,59 @@ class VSCodeIpcConnector(QThread):
             try:
                 message = read_frame(stream, self.config.vscode_ipc_read_timeout)
             except IpcReadTimeoutError:
+                self._expire_stale_working_sessions()
                 continue
             transcript = summarize_ipc_message(message, self._store)
             if transcript is None:
                 continue
             self._handle_transcript(transcript)
+            self._expire_stale_working_sessions()
             count += 1
         return count
 
     def _handle_transcript(self, transcript: StatusTranscript) -> None:
         """Update registry and emit session/global status signals."""
-        display_name = _display_name(transcript.conversation_id)
         session = SessionStatus(
             session_key=_session_key(transcript.conversation_id),
             thread_id=transcript.conversation_id,
             endpoint_id=ENDPOINT_ID,
-            display_name=display_name,
+            display_name=transcript.display_name
+            or _safe_display_name(transcript.conversation_id, None),
             status=transcript.product_status,
             last_updated=time.time(),
         )
+        self._managed_keys.add(session.session_key)
         self.registry.update(session)
         self.session_updated.emit(session)
+        sessions = self.registry.get_all()
+        self.sessions_changed.emit(sessions)
+        self._emit_aggregate_if_changed(sessions)
+
+    def _expire_stale_working_sessions(self, now: float | None = None) -> None:
+        """Downgrade stale VSCode IPC working sessions so old turns stop dominating."""
+        current_time = time.time() if now is None else now
+        changed = False
+        for session in self.registry.get_all():
+            if session.session_key not in self._managed_keys:
+                continue
+            if session.status is not CodexStatus.WORKING:
+                continue
+            if current_time - session.last_updated <= WORKING_STALE_AFTER_SECONDS:
+                continue
+            self.registry.update(
+                SessionStatus(
+                    session_key=session.session_key,
+                    thread_id=session.thread_id,
+                    endpoint_id=session.endpoint_id,
+                    display_name=session.display_name,
+                    status=CodexStatus.IDLE,
+                    last_updated=current_time,
+                )
+            )
+            changed = True
+
+        if not changed:
+            return
         sessions = self.registry.get_all()
         self.sessions_changed.emit(sessions)
         self._emit_aggregate_if_changed(sessions)
@@ -601,16 +653,20 @@ def summarize_ipc_message(
 def _transcript_from_summary(summary: ConversationSummary) -> StatusTranscript:
     last_turn = summary.last_turn
     last_turn_status = last_turn.status if last_turn is not None else None
+    last_turn_started_at_ms = last_turn.started_at_ms if last_turn is not None else None
     product_status = _product_status(
         last_turn_status,
         summary.approval_signals,
         summary.user_input_signals,
+        last_turn_started_at_ms,
     )
     return StatusTranscript(
         conversation_id=summary.conversation_id,
         revision=summary.revision,
         host_id=summary.host_id,
+        display_name=summary.display_name,
         last_turn_status=last_turn_status,
+        last_turn_started_at_ms=last_turn_started_at_ms,
         product_status=product_status,
         turn_count=len(summary.turns),
         approval_signals=tuple(summary.approval_signals),
@@ -712,6 +768,8 @@ def _product_status(
     last_turn_status: str | None,
     approval_signals: list[str],
     user_input_signals: list[str],
+    last_turn_started_at_ms: int | None = None,
+    now_ms: int | None = None,
 ) -> CodexStatus:
     """Map sanitized IPC fields into the six product statuses."""
     if approval_signals:
@@ -719,6 +777,8 @@ def _product_status(
     if user_input_signals:
         return CodexStatus.WAITING_USER_INPUT
     if last_turn_status == "inProgress":
+        if _is_stale_in_progress(last_turn_started_at_ms, now_ms):
+            return CodexStatus.IDLE
         return CodexStatus.WORKING
     if last_turn_status == "completed":
         return CodexStatus.IDLE
@@ -727,6 +787,13 @@ def _product_status(
     if last_turn_status is None:
         return CodexStatus.OFFLINE
     return CodexStatus.IDLE
+
+
+def _is_stale_in_progress(started_at_ms: int | None, now_ms: int | None = None) -> bool:
+    if started_at_ms is None:
+        return False
+    current_ms = int(time.time() * 1000) if now_ms is None else now_ms
+    return current_ms - started_at_ms > int(WORKING_STALE_AFTER_SECONDS * 1000)
 
 
 def _extract_signal_type(value: object) -> str | None:
@@ -753,8 +820,20 @@ def _session_key(conversation_id: str) -> str:
     return f"{ENDPOINT_ID}::{conversation_id}"
 
 
-def _display_name(conversation_id: str) -> str:
-    return conversation_id[:12] if len(conversation_id) > 12 else conversation_id
+def _safe_display_name(conversation_id: str, state_payload: Mapping[str, object] | None) -> str:
+    """Return a readable name without using prompt text, generated text, or paths."""
+    if state_payload is not None:
+        for key in ("displayName", "display_name", "title", "name", "workspace", "repo"):
+            value = state_payload.get(key)
+            if isinstance(value, str) and value.strip():
+                return _truncate_display_name(value.strip())
+    if OPAQUE_ID_PATTERN.fullmatch(conversation_id):
+        return f"会话 {conversation_id[-3:]}"
+    return _truncate_display_name(conversation_id)
+
+
+def _truncate_display_name(value: str) -> str:
+    return value[:12] if len(value) > 12 else value
 
 
 def _patch_path(path: list[object]) -> str:

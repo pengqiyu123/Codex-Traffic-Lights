@@ -29,9 +29,9 @@ class LampPalette:
 
 
 LAMP_PALETTE: dict[str, LampPalette] = {
-    "red": LampPalette("#FF3B30", "#2A0808", (255, 59, 48, 0.25)),
-    "yellow": LampPalette("#FFCC00", "#2A2400", (255, 204, 0, 0.25)),
-    "green": LampPalette("#34C759", "#082A10", (52, 199, 89, 0.25)),
+    "red": LampPalette("#FF625A", "#140202", (255, 98, 90, 0.34)),
+    "yellow": LampPalette("#FFE066", "#151000", (255, 224, 102, 0.30)),
+    "green": LampPalette("#45E873", "#031205", (69, 232, 115, 0.30)),
 }
 
 STATUS_COLORS: dict[CodexStatus, str] = {
@@ -253,7 +253,7 @@ def _paint_inner_glow(
     painter.setPen(Qt.NoPen)
 
 
-def _paint_highlight(painter: QPainter, rect: QRectF) -> None:
+def _paint_highlight(painter: QPainter, rect: QRectF, opacity: float) -> None:
     """Paint the fixed glass reflection highlight."""
     highlight_rect = QRectF(
         rect.left() + rect.width() * 0.26,
@@ -264,7 +264,7 @@ def _paint_highlight(painter: QPainter, rect: QRectF) -> None:
     path = QPainterPath()
     path.addEllipse(highlight_rect)
     color = QColor(255, 255, 255)
-    color.setAlphaF(0.58)
+    color.setAlphaF(0.12 + min(0.48, opacity * 0.48))
     painter.fillPath(path, color)
 
 
@@ -320,6 +320,6 @@ def _paint_lamp(
     _paint_groove(painter, rect)
     _paint_dim_glass(painter, rect, palette)
     _paint_lit_core(painter, rect, palette, lit_opacity)
-    _paint_highlight(painter, rect)
+    _paint_highlight(painter, rect, lit_opacity)
     _paint_inner_glow(painter, rect, palette, lit_opacity)
     _paint_bezel(painter, rect)

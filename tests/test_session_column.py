@@ -10,6 +10,7 @@ from PyQt5.QtWidgets import QApplication
 from codex_traffic_lights.models import CodexStatus
 from codex_traffic_lights.session_models import SessionStatus
 from codex_traffic_lights.widgets.session_column import SessionColumnWidget
+from codex_traffic_lights.widgets.traffic_light import STATUS_COLORS
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -46,7 +47,7 @@ def test_session_column_locks_pixel_size_and_status() -> None:
     assert column.minimumSize() == QSize(44, 68)
     assert column.maximumWidth() == 44
     assert column.session is session
-    assert column.status_color == "#FFCC00"
+    assert column.status_color == STATUS_COLORS[CodexStatus.WAITING_APPROVAL]
 
 
 def test_session_column_updates_session_tooltip_and_color() -> None:
@@ -57,7 +58,7 @@ def test_session_column_updates_session_tooltip_and_color() -> None:
     column.set_session(updated)
 
     assert column.session is updated
-    assert column.status_color == "#FF3B30"
+    assert column.status_color == STATUS_COLORS[CodexStatus.ERROR]
     assert "repo-beta" in column.toolTip()
     assert "thread-b" in column.toolTip()
     assert CodexStatus.ERROR.label in column.toolTip()

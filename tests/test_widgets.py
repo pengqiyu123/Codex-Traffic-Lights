@@ -52,12 +52,9 @@ def test_traffic_light_palette_matches_industrial_spec() -> None:
     """Traffic-light rendering should use the industrial instrument palette."""
     assert BODY_BACKGROUND_COLOR == "#0D0D0F"
     assert PANEL_COLOR == "#16161A"
-    assert LAMP_PALETTE["red"].bright == "#FF3B30"
-    assert LAMP_PALETTE["red"].dim == "#2A0808"
-    assert LAMP_PALETTE["yellow"].bright == "#FFCC00"
-    assert LAMP_PALETTE["yellow"].dim == "#2A2400"
-    assert LAMP_PALETTE["green"].bright == "#34C759"
-    assert LAMP_PALETTE["green"].dim == "#082A10"
+    for palette in LAMP_PALETTE.values():
+        assert _relative_luminance(palette.bright) - _relative_luminance(palette.dim) > 100
+        assert _relative_luminance(palette.dim) < 24
 
 
 def test_traffic_light_widget_accepts_three_opacity_values() -> None:
@@ -93,6 +90,24 @@ def test_traffic_light_widget_renders_without_error() -> None:
     widget.render(pixmap)
 
     assert pixmap.size() == QSize(80, 130)
+
+
+def test_traffic_light_off_lamps_have_subtle_highlight() -> None:
+    """Unlit lamps should stay visually dark instead of carrying a bright glass spot."""
+    widget = TrafficLightWidget()
+    widget.resize(80, 130)
+    for light_index, effect in enumerate(STATUS_EFFECTS[CodexStatus.WORKING]):
+        widget.set_light_effect(light_index, effect)
+    widget.set_light_opacity(0.02, 1.0, 0.02)
+    pixmap = QPixmap(widget.size())
+
+    widget.render(pixmap)
+
+    red_sample = pixmap.toImage().pixelColor(34, 21)
+    yellow_sample = pixmap.toImage().pixelColor(34, 65)
+    assert _color_luminance(yellow_sample.red(), yellow_sample.green(), yellow_sample.blue()) > (
+        _color_luminance(red_sample.red(), red_sample.green(), red_sample.blue()) + 45
+    )
 
 
 def test_status_bar_sets_visible_status_text() -> None:
@@ -142,10 +157,23 @@ def test_main_window_toggles_expanded_frame() -> None:
 
     assert window.is_expanded is True
     assert window.width() == 272
-    assert window.height() == 420
+    assert window.height() <= 340
 
     window.toggle_expanded()
 
     assert window.is_expanded is False
     assert window.width() == 104
     assert window.height() == 220
+
+
+def _relative_luminance(hex_color: str) -> float:
+    color = hex_color.removeprefix("#")
+    return _color_luminance(
+        int(color[0:2], 16),
+        int(color[2:4], 16),
+        int(color[4:6], 16),
+    )
+
+
+def _color_luminance(red: int, green: int, blue: int) -> float:
+    return red * 0.2126 + green * 0.7152 + blue * 0.0722

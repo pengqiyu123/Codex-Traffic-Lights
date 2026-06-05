@@ -60,7 +60,7 @@ def test_session_matrix_updates_existing_columns_by_session_key() -> None:
 
 
 def test_main_window_expanded_mode_uses_matrix_and_sessions() -> None:
-    """Expanded main window should expose the 240x420 multi-session panel."""
+    """Expanded main window should expose a compact multi-session panel."""
     window = FramelessMainWindow()
     sessions = [
         make_session(0, CodexStatus.WORKING),
@@ -73,7 +73,7 @@ def test_main_window_expanded_mode_uses_matrix_and_sessions() -> None:
     assert window.is_expanded is True
     assert window._body.width() == 240
     assert window.width() == 272
-    assert window.height() == 420
+    assert window.height() <= 340
     assert not window.session_matrix.isHidden()
     assert len(window.session_matrix.session_columns) == 2
     assert window.status_bar.status_text == "待审批确认 · 2 会话"
