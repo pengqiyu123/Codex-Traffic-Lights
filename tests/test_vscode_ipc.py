@@ -140,8 +140,18 @@ def test_patch_updates_last_turn_status_to_completed() -> None:
         ("inProgress", (), (), CodexStatus.WORKING),
         ("completed", (), (), CodexStatus.IDLE),
         ("failed", (), (), CodexStatus.ERROR),
-        ("inProgress", ("type:codex/event/exec_approval_request",), (), CodexStatus.WAITING_APPROVAL),
-        ("inProgress", (), ("type:codex/event/request_user_input",), CodexStatus.WAITING_USER_INPUT),
+        (
+            "inProgress",
+            ("type:codex/event/exec_approval_request",),
+            (),
+            CodexStatus.WAITING_APPROVAL,
+        ),
+        (
+            "inProgress",
+            (),
+            ("type:codex/event/request_user_input",),
+            CodexStatus.WAITING_USER_INPUT,
+        ),
         (None, (), (), CodexStatus.OFFLINE),
     ],
 )

@@ -80,3 +80,7 @@ class AppConfig:
     window_scale: float = 1.0
     notification_enabled: bool = True
     sound_enabled: bool = True
+    vscode_ipc_enabled: bool = True
+    vscode_ipc_pipe_path: str = r"\\.\pipe\codex-ipc"
+    vscode_ipc_reconnect_delay: float = 2.0
+    vscode_ipc_read_timeout: float = 1.0

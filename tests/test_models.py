@@ -92,6 +92,10 @@ def test_app_config_defaults_match_task_contract() -> None:
     assert config.window_scale == 1.0
     assert config.notification_enabled is True
     assert config.sound_enabled is True
+    assert config.vscode_ipc_enabled is True
+    assert config.vscode_ipc_pipe_path == r"\\.\pipe\codex-ipc"
+    assert config.vscode_ipc_reconnect_delay == 2.0
+    assert config.vscode_ipc_read_timeout == 1.0
 
 
 def test_app_config_is_frozen() -> None:
