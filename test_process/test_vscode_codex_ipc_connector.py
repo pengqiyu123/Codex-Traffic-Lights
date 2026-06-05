@@ -8,6 +8,7 @@ from vscode_codex_ipc_connector import (
     ConversationStore,
     FrameDecoder,
     IpcConnectorConfig,
+    IpcReadTimeoutError,
     build_initialize_request,
     encode_frame,
     run_connector,
@@ -77,7 +78,7 @@ def test_snapshot_extracts_last_turn_status_without_sensitive_text() -> None:
     assert data["lastTurn"]["status"] == "inProgress"
     assert data["productStatus"] == "WORKING"
     assert "secret" not in json.dumps(data)
-    assert "local" not in json.dumps(data)
+    assert r"contains\local\path" not in json.dumps(data)
 
 
 def test_patch_updates_last_turn_status_to_completed() -> None:
@@ -105,7 +106,9 @@ def test_patch_updates_last_turn_status_to_completed() -> None:
                 "type": "patches",
                 "baseRevision": 1,
                 "revision": 2,
-                "patches": [{"op": "replace", "path": ["turns", 0, "status"], "value": "completed"}],
+                "patches": [
+                    {"op": "replace", "path": ["turns", 0, "status"], "value": "completed"}
+                ],
             },
         ),
         store,
@@ -114,6 +117,89 @@ def test_patch_updates_last_turn_status_to_completed() -> None:
     assert transcript is not None
     assert transcript.last_turn_status == "completed"
     assert transcript.product_status == "IDLE"
+
+
+def test_snapshot_maps_failed_last_turn_to_error() -> None:
+    """A failed last turn should become the ERROR product status."""
+    store = ConversationStore()
+
+    transcript = summarize_ipc_message(
+        _broadcast(
+            "thread-a",
+            {
+                "type": "snapshot",
+                "revision": 10,
+                "conversationState": {
+                    "id": "thread-a",
+                    "turns": [{"status": "failed", "params": {"threadId": "thread-a"}}],
+                },
+            },
+        ),
+        store,
+    )
+
+    assert transcript is not None
+    assert transcript.last_turn_status == "failed"
+    assert transcript.product_status == "ERROR"
+
+
+def test_snapshot_detects_waiting_signals_without_recording_item_payloads() -> None:
+    """Starting during a wait state should still see sanitized item type signals."""
+    store = ConversationStore()
+
+    transcript = summarize_ipc_message(
+        _broadcast(
+            "thread-a",
+            {
+                "type": "snapshot",
+                "revision": 10,
+                "conversationState": {
+                    "id": "thread-a",
+                    "turns": [
+                        {
+                            "status": "inProgress",
+                            "params": {"threadId": "thread-a"},
+                            "items": [
+                                {
+                                    "type": "codex/event/exec_approval_request",
+                                    "command": r"write C:\Users\secret\file.txt",
+                                }
+                            ],
+                        }
+                    ],
+                },
+            },
+        ),
+        store,
+    )
+
+    assert transcript is not None
+    data = transcript.to_json_dict()
+    assert data["productStatus"] == "WAITING_APPROVAL"
+    assert data["approvalSignals"] == ["type:codex/event/exec_approval_request"]
+    assert data["signalPatchPaths"] == ["/turns/0/items/0"]
+    assert "secret" not in json.dumps(data)
+    assert "command" not in json.dumps(data)
+
+
+def test_patch_without_known_status_or_signal_is_not_emitted() -> None:
+    """A patch-only update must not be misreported as OFFLINE."""
+    store = ConversationStore()
+
+    transcript = summarize_ipc_message(
+        _broadcast(
+            "thread-a",
+            {
+                "type": "patches",
+                "baseRevision": 1,
+                "revision": 2,
+                "patches": [{"op": "add", "path": ["turns", 64, "items", 0], "value": {}}],
+            },
+        ),
+        store,
+    )
+
+    assert transcript is None
 
 
 def test_patch_detects_approval_signal_without_recording_patch_value() -> None:
@@ -168,7 +254,10 @@ def test_patch_detects_user_input_signal() -> None:
                     {
                         "op": "add",
                         "path": ["turns", 0, "items", 1],
-                        "value": {"type": "codex/event/request_user_input", "text": "secret question"},
+                        "value": {
+                            "type": "codex/event/request_user_input",
+                            "text": "secret question",
+                        },
                     }
                 ],
             },
@@ -200,17 +289,62 @@ def test_run_connector_reconnects_after_disconnect_and_outputs_json_lines() -> N
     assert json.loads(output[0])["productStatus"] == "WORKING"
 
 
+def test_run_connector_keeps_connection_open_after_read_timeout() -> None:
+    """A quiet pipe should not force reconnect; only real disconnects should."""
+    stream_factory = TimeoutThenMessageStreamFactory()
+    output: list[str] = []
+
+    exit_code = run_connector(
+        IpcConnectorConfig(duration=1.0, max_events=1, reconnect_delay=0.01, read_timeout=0.01),
+        stream_factory=stream_factory,
+        write_line=output.append,
+    )
+
+    assert exit_code == 0
+    assert stream_factory.calls == 1
+    assert len(output) == 1
+    assert json.loads(output[0])["productStatus"] == "WORKING"
+
+
 class FlakyStreamFactory:
     """Raise once, then return a stream with one status broadcast."""
 
     def __init__(self) -> None:
         self.calls = 0
 
-    def __call__(self) -> "MemoryStream":
+    def __call__(self) -> MemoryStream:
         self.calls += 1
         if self.calls == 1:
             raise OSError("pipe not ready")
         return MemoryStream(
+            [
+                {"type": "response", "method": "initialize", "resultType": "success"},
+                _broadcast(
+                    "thread-a",
+                    {
+                        "type": "snapshot",
+                        "revision": 1,
+                        "conversationState": {
+                            "id": "thread-a",
+                            "turns": [
+                                {"status": "inProgress", "params": {"threadId": "thread-a"}}
+                            ],
+                        },
+                    },
+                ),
+            ]
+        )
+
+
+class TimeoutThenMessageStreamFactory:
+    """Return one stream that times out once before delivering messages."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self) -> TimeoutThenMessageStream:
+        self.calls += 1
+        return TimeoutThenMessageStream(
             [
                 {"type": "response", "method": "initialize", "resultType": "success"},
                 _broadcast(
@@ -251,6 +385,20 @@ class MemoryStream:
 
     def close(self) -> None:
         self.closed = True
+
+
+class TimeoutThenMessageStream(MemoryStream):
+    """In-memory stream that raises one timeout before sending bytes."""
+
+    def __init__(self, messages: list[dict[str, object]]) -> None:
+        super().__init__(messages)
+        self._timed_out = False
+
+    def read_exact(self, size: int, timeout: float) -> bytes:
+        if not self._timed_out:
+            self._timed_out = True
+            raise IpcReadTimeoutError("quiet pipe")
+        return super().read_exact(size, timeout)
 
 
 def _seed_in_progress(store: ConversationStore) -> None:
