@@ -68,6 +68,18 @@ def make_session(status: CodexStatus) -> SessionStatus:
     )
 
 
+def make_source_session(endpoint_id: str, status: CodexStatus) -> SessionStatus:
+    """Create one tracked session from a specific source."""
+    return SessionStatus(
+        session_key=f"{endpoint_id}::thread-a",
+        thread_id="thread-a",
+        endpoint_id=endpoint_id,
+        display_name=endpoint_id,
+        status=status,
+        last_updated=1.0,
+    )
+
+
 def test_fallback_status_is_offline_when_no_codex_process(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -169,6 +181,20 @@ def test_apply_registry_update_emits_sessions_and_aggregate_status() -> None:
     assert len(sessions_spy[0][0]) == 1
 
 
+def test_apply_registry_update_filters_claude_sessions_from_ui_and_aggregate() -> None:
+    """Claude hook sessions should not affect the Codex-only product UI."""
+    monitor = make_monitor()
+    monitor.registry.update(make_source_session("claude", CodexStatus.ERROR))
+    monitor.registry.update(make_source_session("vscode-ipc", CodexStatus.WORKING))
+    status_spy = QSignalSpy(monitor.status_changed)
+    sessions_spy = QSignalSpy(monitor.sessions_changed)
+
+    monitor.apply_registry_update()
+
+    assert [arguments[0] for arguments in status_spy] == [CodexStatus.WORKING]
+    assert [session.endpoint_id for session in sessions_spy[0][0]] == ["vscode-ipc"]
+
+
 @pytest.mark.parametrize(
     ("event", "expected_status"),
     [
@@ -250,3 +276,22 @@ def test_apply_app_server_event_updates_registry_and_aggregates_status() -> None
         CodexStatus.WORKING,
         CodexStatus.ERROR,
     ]
+
+
+def test_apply_app_server_event_filters_claude_sessions_from_ui_and_aggregate() -> None:
+    """App-server event publishing should keep the shared UI Codex-only."""
+    monitor = make_monitor()
+    monitor.registry.update(make_source_session("claude", CodexStatus.ERROR))
+    spy = QSignalSpy(monitor.status_changed)
+    sessions_spy = QSignalSpy(monitor.sessions_changed)
+
+    monitor.apply_app_server_event(
+        {
+            "endpointId": "app-server",
+            "threadId": "thread-a",
+            "status": {"type": "active", "activeFlags": []},
+        }
+    )
+
+    assert [arguments[0] for arguments in spy] == [CodexStatus.WORKING]
+    assert [session.endpoint_id for session in sessions_spy[0][0]] == ["app-server"]

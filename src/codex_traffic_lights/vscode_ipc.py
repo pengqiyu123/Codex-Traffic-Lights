@@ -27,14 +27,13 @@ from PyQt5.QtCore import QObject, QThread, pyqtSignal
 
 from codex_traffic_lights.models import AppConfig, CodexStatus
 from codex_traffic_lights.session_models import SessionRegistry, SessionStatus
-from codex_traffic_lights.status_aggregator import aggregate_status
+from codex_traffic_lights.status_aggregator import aggregate_status, codex_sessions_only
 
 DEFAULT_PIPE_PATH = r"\\.\pipe\codex-ipc"
 ENDPOINT_ID = "vscode-ipc"
 INITIALIZING_CLIENT_ID = "initializing-client"
 CONNECTOR_CLIENT_TYPE = "traffic-lights-connector"
 MAX_FRAME_BYTES = 50 * 1024 * 1024
-WORKING_STALE_AFTER_SECONDS = 300.0
 GENERIC_READ = 0x80000000
 GENERIC_WRITE = 0x40000000
 OPEN_EXISTING = 3
@@ -110,6 +109,8 @@ class ConversationSummary:
     display_name: str | None = None
     revision: int | None = None
     host_id: str | None = None
+    runtime_status_type: str | None = None
+    active_flags: list[str] = field(default_factory=list)
     turns: list[TurnSummary] = field(default_factory=list)
     approval_signals: list[str] = field(default_factory=list)
     user_input_signals: list[str] = field(default_factory=list)
@@ -129,6 +130,8 @@ class StatusTranscript:
     revision: int | None
     host_id: str | None
     display_name: str | None
+    runtime_status_type: str | None
+    active_flags: tuple[str, ...]
     last_turn_status: str | None
     last_turn_started_at_ms: int | None
     product_status: CodexStatus
@@ -146,6 +149,10 @@ class StatusTranscript:
             "displayName": self.display_name,
             "hostId": self.host_id,
             "revision": self.revision,
+            "runtimeStatus": {
+                "type": self.runtime_status_type,
+                "activeFlags": list(self.active_flags),
+            },
             "lastTurn": {
                 "status": self.last_turn_status,
                 "startedAtMs": self.last_turn_started_at_ms,
@@ -222,6 +229,11 @@ class ConversationStore:
             state_host = state_mapping.get("hostId")
             if isinstance(state_host, str):
                 summary.host_id = state_host
+            self._apply_runtime_status(
+                summary,
+                state_mapping.get("threadRuntimeStatus"),
+            )
+            self._apply_active_flags(summary, state_mapping.get("activeFlags"))
             turns = state_mapping.get("turns")
             if isinstance(turns, list):
                 for turn_index, turn in enumerate(turns):
@@ -264,7 +276,18 @@ class ConversationStore:
         path: list[object],
         value: object,
     ) -> None:
-        if not path or path[0] != "turns":
+        if not path:
+            return
+        if path[0] == "threadRuntimeStatus":
+            self._apply_thread_runtime_patch(summary, path, value)
+            return
+        if path[0] == "activeFlags":
+            if len(path) == 1:
+                self._apply_active_flags(summary, value)
+            elif isinstance(value, str):
+                _append_unique(summary.active_flags, value)
+            return
+        if path[0] != "turns":
             return
         if len(path) >= 2 and isinstance(path[1], int):
             turn_index = path[1]
@@ -289,6 +312,43 @@ class ConversationStore:
                 turn = self._ensure_turn(summary, turn_index)
                 hook_index = path[3] if len(path) >= 4 and isinstance(path[3], int) else None
                 turn.hook_run_count = _bump_count(turn.hook_run_count, hook_index)
+
+    def _apply_thread_runtime_patch(
+        self,
+        summary: ConversationSummary,
+        path: list[object],
+        value: object,
+    ) -> None:
+        if len(path) == 1:
+            self._apply_runtime_status(summary, value)
+            return
+        if len(path) < 2:
+            return
+        key = path[1]
+        if key == "type" and isinstance(value, str):
+            summary.runtime_status_type = value
+        elif key == "activeFlags":
+            if len(path) == 2:
+                self._apply_active_flags(summary, value)
+            elif isinstance(value, str):
+                _append_unique(summary.active_flags, value)
+
+    def _apply_runtime_status(
+        self,
+        summary: ConversationSummary,
+        value: object,
+    ) -> None:
+        if not isinstance(value, Mapping):
+            return
+        status_type = value.get("type")
+        if isinstance(status_type, str):
+            summary.runtime_status_type = status_type
+        self._apply_active_flags(summary, value.get("activeFlags"))
+
+    def _apply_active_flags(self, summary: ConversationSummary, value: object) -> None:
+        if not isinstance(value, list):
+            return
+        summary.active_flags = [flag for flag in value if isinstance(flag, str)]
 
     def _record_signals(
         self,
@@ -467,7 +527,7 @@ class VSCodeIpcConnector(QThread):
         self._stream_factory = stream_factory
         self._store = ConversationStore()
         self._managed_keys: set[str] = set()
-        self._previous_status = aggregate_status(self.registry.get_all())
+        self._previous_status = aggregate_status(codex_sessions_only(self.registry.get_all()))
 
     def run(self) -> None:
         """Listen to VSCode Codex IPC until interruption is requested."""
@@ -517,13 +577,11 @@ class VSCodeIpcConnector(QThread):
             try:
                 message = read_frame(stream, self.config.vscode_ipc_read_timeout)
             except IpcReadTimeoutError:
-                self._expire_stale_working_sessions()
                 continue
             transcript = summarize_ipc_message(message, self._store)
             if transcript is None:
                 continue
             self._handle_transcript(transcript)
-            self._expire_stale_working_sessions()
             count += 1
         return count
 
@@ -541,38 +599,13 @@ class VSCodeIpcConnector(QThread):
         self._managed_keys.add(session.session_key)
         self.registry.update(session)
         self.session_updated.emit(session)
-        sessions = self.registry.get_all()
+        sessions = codex_sessions_only(self.registry.get_all())
         self.sessions_changed.emit(sessions)
         self._emit_aggregate_if_changed(sessions)
 
     def _expire_stale_working_sessions(self, now: float | None = None) -> None:
-        """Downgrade stale VSCode IPC working sessions so old turns stop dominating."""
-        current_time = time.time() if now is None else now
-        changed = False
-        for session in self.registry.get_all():
-            if session.session_key not in self._managed_keys:
-                continue
-            if session.status is not CodexStatus.WORKING:
-                continue
-            if current_time - session.last_updated <= WORKING_STALE_AFTER_SECONDS:
-                continue
-            self.registry.update(
-                SessionStatus(
-                    session_key=session.session_key,
-                    thread_id=session.thread_id,
-                    endpoint_id=session.endpoint_id,
-                    display_name=session.display_name,
-                    status=CodexStatus.IDLE,
-                    last_updated=current_time,
-                )
-            )
-            changed = True
-
-        if not changed:
-            return
-        sessions = self.registry.get_all()
-        self.sessions_changed.emit(sessions)
-        self._emit_aggregate_if_changed(sessions)
+        """Keep compatibility with older tests; long tasks no longer expire by time."""
+        del now
 
     def _emit_aggregate_if_changed(self, sessions: list[SessionStatus]) -> None:
         aggregate = aggregate_status(sessions)
@@ -659,12 +692,16 @@ def _transcript_from_summary(summary: ConversationSummary) -> StatusTranscript:
         summary.approval_signals,
         summary.user_input_signals,
         last_turn_started_at_ms,
+        runtime_status_type=summary.runtime_status_type,
+        active_flags=summary.active_flags,
     )
     return StatusTranscript(
         conversation_id=summary.conversation_id,
         revision=summary.revision,
         host_id=summary.host_id,
         display_name=summary.display_name,
+        runtime_status_type=summary.runtime_status_type,
+        active_flags=tuple(summary.active_flags),
         last_turn_status=last_turn_status,
         last_turn_started_at_ms=last_turn_started_at_ms,
         product_status=product_status,
@@ -760,6 +797,8 @@ def _has_observable_status(summary: ConversationSummary) -> bool:
     return (
         bool(summary.approval_signals)
         or bool(summary.user_input_signals)
+        or summary.runtime_status_type is not None
+        or bool(summary.active_flags)
         or (last_turn is not None and last_turn.status is not None)
     )
 
@@ -770,15 +809,31 @@ def _product_status(
     user_input_signals: list[str],
     last_turn_started_at_ms: int | None = None,
     now_ms: int | None = None,
+    *,
+    runtime_status_type: str | None = None,
+    active_flags: list[str] | None = None,
 ) -> CodexStatus:
     """Map sanitized IPC fields into the six product statuses."""
-    if approval_signals:
+    del last_turn_started_at_ms, now_ms
+    all_approval_signals = [*approval_signals]
+    all_user_input_signals = [*user_input_signals]
+    for flag in active_flags or []:
+        if _is_approval_signal(flag):
+            all_approval_signals.append(f"activeFlag:{flag}")
+        if _is_user_input_signal(flag):
+            all_user_input_signals.append(f"activeFlag:{flag}")
+
+    if all_approval_signals:
         return CodexStatus.WAITING_APPROVAL
-    if user_input_signals:
+    if all_user_input_signals:
         return CodexStatus.WAITING_USER_INPUT
+    if runtime_status_type == "active":
+        return CodexStatus.WORKING
+    if runtime_status_type == "idle":
+        return CodexStatus.IDLE
+    if runtime_status_type == "systemError":
+        return CodexStatus.ERROR
     if last_turn_status == "inProgress":
-        if _is_stale_in_progress(last_turn_started_at_ms, now_ms):
-            return CodexStatus.IDLE
         return CodexStatus.WORKING
     if last_turn_status == "completed":
         return CodexStatus.IDLE
@@ -787,13 +842,6 @@ def _product_status(
     if last_turn_status is None:
         return CodexStatus.OFFLINE
     return CodexStatus.IDLE
-
-
-def _is_stale_in_progress(started_at_ms: int | None, now_ms: int | None = None) -> bool:
-    if started_at_ms is None:
-        return False
-    current_ms = int(time.time() * 1000) if now_ms is None else now_ms
-    return current_ms - started_at_ms > int(WORKING_STALE_AFTER_SECONDS * 1000)
 
 
 def _extract_signal_type(value: object) -> str | None:
@@ -813,7 +861,12 @@ def _is_approval_signal(signal_type: str) -> bool:
 
 def _is_user_input_signal(signal_type: str) -> bool:
     lowered = signal_type.casefold()
-    return "request_user_input" in lowered or "user_input_request" in lowered
+    compact = lowered.replace("_", "").replace("-", "")
+    return (
+        "request_user_input" in lowered
+        or "user_input_request" in lowered
+        or "waitingonuserinput" in compact
+    )
 
 
 def _session_key(conversation_id: str) -> str:

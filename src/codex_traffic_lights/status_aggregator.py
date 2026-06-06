@@ -15,6 +15,11 @@ STATUS_PRIORITY: dict[CodexStatus, int] = {
 }
 
 
+def codex_sessions_only(sessions: list[SessionStatus]) -> list[SessionStatus]:
+    """Return sessions that belong to Codex data sources, excluding Claude hooks."""
+    return [session for session in sessions if _is_codex_session(session)]
+
+
 def aggregate_status(sessions: list[SessionStatus]) -> CodexStatus:
     """Return the highest-priority product status across tracked sessions."""
     if not sessions:
@@ -27,3 +32,14 @@ def aggregate_display_text(sessions: list[SessionStatus], status: CodexStatus) -
     if len(sessions) <= 1:
         return status.label
     return f"{status.label} · {len(sessions)} 会话"
+
+
+def _is_codex_session(session: SessionStatus) -> bool:
+    endpoint_id = session.endpoint_id.casefold()
+    session_key = session.session_key.casefold()
+    return not (
+        endpoint_id == "claude"
+        or endpoint_id.startswith("claude-")
+        or endpoint_id.startswith("claude_")
+        or session_key.startswith("claude::")
+    )

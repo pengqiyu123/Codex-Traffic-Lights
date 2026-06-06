@@ -41,7 +41,7 @@ from codex_traffic_lights._helpers import extract_string, path_basename
 from codex_traffic_lights.models import AppConfig, CodexStatus
 from codex_traffic_lights.session_models import SessionRegistry, SessionStatus
 from codex_traffic_lights.state_mapper import CodexStateMapper
-from codex_traffic_lights.status_aggregator import aggregate_status
+from codex_traffic_lights.status_aggregator import aggregate_status, codex_sessions_only
 
 DEFAULT_APP_SERVER_URL = "stdio://"
 WEBSOCKET_SCHEME = "ws"
@@ -89,7 +89,9 @@ class AppServerConnector(QThread):
         self.endpoint_url = config.app_server_url or DEFAULT_APP_SERVER_URL
         self.endpoint_id = self.endpoint_url
         self._client: AppServerTransport | None = None
-        self._previous_status: CodexStatus = aggregate_status(self.registry.get_all())
+        self._previous_status: CodexStatus = aggregate_status(
+            codex_sessions_only(self.registry.get_all())
+        )
         self._display_names: dict[str, str] = {}
 
     def run(self) -> None:
@@ -180,7 +182,7 @@ class AppServerConnector(QThread):
         endpoint_id = extract_string(params, "endpointId", "endpoint_id") or self.endpoint_id
         self.registry.remove(_session_key(endpoint_id, thread_id))
         self._display_names.pop(thread_id, None)
-        self.sessions_changed.emit(self.registry.get_all())
+        self.sessions_changed.emit(codex_sessions_only(self.registry.get_all()))
         self._emit_aggregate_if_changed()
 
     def _handle_status_changed(self, params: Mapping[str, object]) -> None:
@@ -261,12 +263,12 @@ class AppServerConnector(QThread):
         """Store one session and emit session plus aggregate status changes."""
         self.registry.update(session)
         self.session_updated.emit(session)
-        self.sessions_changed.emit(self.registry.get_all())
+        self.sessions_changed.emit(codex_sessions_only(self.registry.get_all()))
         self._emit_aggregate_if_changed()
 
     def _emit_aggregate_if_changed(self) -> None:
         """Emit aggregate status only when it changes."""
-        aggregate = aggregate_status(self.registry.get_all())
+        aggregate = aggregate_status(codex_sessions_only(self.registry.get_all()))
         if aggregate is self._previous_status:
             return
         self._previous_status = aggregate

@@ -9,6 +9,7 @@ from PyQt5.QtWidgets import QApplication
 
 from codex_traffic_lights.animation.effects import STATUS_EFFECTS
 from codex_traffic_lights.models import CodexStatus
+from codex_traffic_lights.session_models import SessionStatus
 from codex_traffic_lights.widgets.header import HeaderWidget
 from codex_traffic_lights.widgets.main_window import FramelessMainWindow
 from codex_traffic_lights.widgets.status_bar import StatusBarWidget
@@ -166,6 +167,19 @@ def test_main_window_toggles_expanded_frame() -> None:
     assert window.height() == 220
 
 
+def test_main_window_filters_claude_sessions_from_display_and_aggregate() -> None:
+    """Claude sessions should not appear in the Codex-only traffic light UI."""
+    window = FramelessMainWindow()
+    codex_session = _session("vscode-ipc", "codex-a", "codex", CodexStatus.WORKING)
+    claude_session = _session("claude", "claude-a", "claude", CodexStatus.ERROR)
+
+    window.set_sessions([claude_session, codex_session])
+
+    assert window._sessions == [codex_session]
+    assert window.status_bar.status_text == CodexStatus.WORKING.label
+    assert [column.session for column in window.session_matrix.session_columns] == [codex_session]
+
+
 def _relative_luminance(hex_color: str) -> float:
     color = hex_color.removeprefix("#")
     return _color_luminance(
@@ -177,3 +191,19 @@ def _relative_luminance(hex_color: str) -> float:
 
 def _color_luminance(red: int, green: int, blue: int) -> float:
     return red * 0.2126 + green * 0.7152 + blue * 0.0722
+
+
+def _session(
+    endpoint_id: str,
+    thread_id: str,
+    display_name: str,
+    status: CodexStatus,
+) -> SessionStatus:
+    return SessionStatus(
+        session_key=f"{endpoint_id}::{thread_id}",
+        thread_id=thread_id,
+        endpoint_id=endpoint_id,
+        display_name=display_name,
+        status=status,
+        last_updated=100.0,
+    )

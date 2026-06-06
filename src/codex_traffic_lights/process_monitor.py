@@ -13,7 +13,7 @@ from codex_traffic_lights._helpers import extract_string, path_basename
 from codex_traffic_lights.models import AppConfig, CodexStatus
 from codex_traffic_lights.session_models import SessionRegistry, SessionStatus
 from codex_traffic_lights.state_mapper import CodexStateMapper
-from codex_traffic_lights.status_aggregator import aggregate_status
+from codex_traffic_lights.status_aggregator import aggregate_status, codex_sessions_only
 
 ONLINE_STATUSES: frozenset[CodexStatus] = frozenset(
     {
@@ -48,7 +48,7 @@ class ProcessMonitor(QThread):
 
     def _detect_status(self) -> CodexStatus:
         """Return precise session aggregate status, falling back to process presence."""
-        sessions = self.registry.get_all()
+        sessions = codex_sessions_only(self.registry.get_all())
         if sessions:
             return aggregate_status(sessions)
         return self._detect_fallback_status()
@@ -88,12 +88,13 @@ class ProcessMonitor(QThread):
                 last_updated=time.time(),
             )
         )
-        self.sessions_changed.emit(self.registry.get_all())
-        self._set_status(aggregate_status(self.registry.get_all()))
+        sessions = codex_sessions_only(self.registry.get_all())
+        self.sessions_changed.emit(sessions)
+        self._set_status(aggregate_status(sessions))
 
     def apply_registry_update(self) -> None:
         """Emit sessions and aggregate status after an external registry update."""
-        sessions = self.registry.get_all()
+        sessions = codex_sessions_only(self.registry.get_all())
         self.sessions_changed.emit(sessions)
         self._set_status(aggregate_status(sessions))
 

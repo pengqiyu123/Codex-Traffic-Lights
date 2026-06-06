@@ -177,18 +177,18 @@ def test_recent_in_progress_status_stays_working() -> None:
     assert status is CodexStatus.WORKING
 
 
-def test_stale_in_progress_status_downgrades_to_idle() -> None:
-    """Old hanging inProgress turns should not keep the global lamp yellow forever."""
+def test_old_in_progress_status_stays_working_without_runtime_idle() -> None:
+    """Long-running active turns should keep WORKING instead of timing out to IDLE."""
     now_ms = 1_700_000_000_000
     started_at_ms = now_ms - 600_000
 
     status = _product_status("inProgress", [], [], started_at_ms, now_ms)
 
-    assert status is CodexStatus.IDLE
+    assert status is CodexStatus.WORKING
 
 
-def test_snapshot_stale_in_progress_turn_maps_to_idle() -> None:
-    """Old IPC snapshots should not reintroduce stale WORKING sessions at startup."""
+def test_snapshot_runtime_idle_overrides_stale_in_progress_turn() -> None:
+    """Runtime idle status should beat an old residual inProgress turn."""
     store = ConversationStore()
 
     transcript = summarize_ipc_message(
@@ -199,6 +199,7 @@ def test_snapshot_stale_in_progress_turn_maps_to_idle() -> None:
                 "revision": 1,
                 "conversationState": {
                     "id": "thread-a",
+                    "threadRuntimeStatus": {"type": "idle"},
                     "turns": [
                         {
                             "status": "inProgress",
@@ -215,6 +216,70 @@ def test_snapshot_stale_in_progress_turn_maps_to_idle() -> None:
     assert transcript is not None
     assert transcript.last_turn_status == "inProgress"
     assert transcript.product_status is CodexStatus.IDLE
+
+
+def test_snapshot_runtime_active_with_empty_flags_stays_working_for_long_task() -> None:
+    """Runtime active status should preserve WORKING for long tasks."""
+    store = ConversationStore()
+
+    transcript = summarize_ipc_message(
+        _broadcast(
+            "thread-a",
+            {
+                "type": "snapshot",
+                "revision": 1,
+                "conversationState": {
+                    "id": "thread-a",
+                    "threadRuntimeStatus": {"type": "active", "activeFlags": []},
+                    "turns": [
+                        {
+                            "status": "inProgress",
+                            "turnStartedAtMs": int((time.time() - 3_600.0) * 1000),
+                            "params": {"threadId": "thread-a"},
+                        }
+                    ],
+                },
+            },
+        ),
+        store,
+    )
+
+    assert transcript is not None
+    assert transcript.product_status is CodexStatus.WORKING
+
+
+@pytest.mark.parametrize(
+    ("active_flags", "expected"),
+    [
+        (["waitingOnApproval"], CodexStatus.WAITING_APPROVAL),
+        (["waitingOnUserInput"], CodexStatus.WAITING_USER_INPUT),
+    ],
+)
+def test_runtime_active_flags_map_waiting_statuses(
+    active_flags: list[str],
+    expected: CodexStatus,
+) -> None:
+    """Runtime activeFlags should drive waiting states when VSCode exposes them."""
+    store = ConversationStore()
+
+    transcript = summarize_ipc_message(
+        _broadcast(
+            "thread-a",
+            {
+                "type": "snapshot",
+                "revision": 1,
+                "conversationState": {
+                    "id": "thread-a",
+                    "threadRuntimeStatus": {"type": "active", "activeFlags": active_flags},
+                    "turns": [{"status": "inProgress", "params": {"threadId": "thread-a"}}],
+                },
+            },
+        ),
+        store,
+    )
+
+    assert transcript is not None
+    assert transcript.product_status is expected
 
 
 def test_snapshot_detects_waiting_signals_without_recording_item_payloads() -> None:
@@ -396,8 +461,8 @@ def test_safe_display_name_shortens_opaque_conversation_ids() -> None:
     assert _safe_display_name("019e8825-161c-7e71-8fda-699303315443", None) == "会话 443"
 
 
-def test_connector_expires_stale_working_sessions_to_idle() -> None:
-    """A stale inProgress IPC session should not keep the global lamp working forever."""
+def test_connector_does_not_expire_long_running_working_sessions_to_idle() -> None:
+    """A long-running active IPC session should not be timed out to IDLE."""
     registry = SessionRegistry()
     connector = VSCodeIpcConnector(AppConfig(), registry)
     status_spy = QSignalSpy(connector.status_changed)
@@ -409,8 +474,8 @@ def test_connector_expires_stale_working_sessions_to_idle() -> None:
 
     session = registry.get("vscode-ipc::thread-a")
     assert session is not None
-    assert session.status is CodexStatus.IDLE
-    assert status_spy[-1][0] is CodexStatus.IDLE
+    assert session.status is CodexStatus.WORKING
+    assert [arguments[0] for arguments in status_spy] == [CodexStatus.WORKING]
 
 
 def test_connector_reconnects_after_disconnect_and_emits_status() -> None:
@@ -603,6 +668,8 @@ def _transcript(
         revision=revision,
         host_id=host_id,
         display_name=None,
+        runtime_status_type=None,
+        active_flags=(),
         last_turn_status=last_turn_status,
         last_turn_started_at_ms=last_turn_started_at_ms,
         product_status=product_status,

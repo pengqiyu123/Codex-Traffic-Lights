@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import cast
+from weakref import ReferenceType, ref
 
 from PyQt5.QtCore import QEasingCurve, QVariantAnimation
 from PyQt5.QtWidgets import QWidget
@@ -31,8 +32,11 @@ class LightAnimationEngine:
                 continue
 
             self._apply_opacity(light_index, effect.min_opacity)
+            engine_ref = ref(self)
             animation.valueChanged.connect(
-                lambda value, index=light_index: self._apply_opacity(index, float(value))
+                lambda value=0.0, index=light_index, target=engine_ref: (
+                    _apply_animation_value(target, index, value)
+                )
             )
             self._animations.append(animation)
             animation.start()
@@ -92,3 +96,22 @@ class LightAnimationEngine:
             callback(light_index, opacity)
 
         self.traffic_light_widget.update()
+
+
+def _apply_animation_value(
+    engine_ref: ReferenceType[LightAnimationEngine],
+    light_index: int,
+    value: object,
+) -> None:
+    """Apply one QVariantAnimation value without keeping the engine alive."""
+    engine = engine_ref()
+    if engine is None:
+        return
+    engine._apply_opacity(light_index, _animation_float(value))
+
+
+def _animation_float(value: object) -> float:
+    """Return a float for a QVariantAnimation value."""
+    if isinstance(value, int | float):
+        return float(value)
+    return float(str(value))

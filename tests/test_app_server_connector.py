@@ -204,6 +204,36 @@ def test_handle_notification_updates_registry_and_emits_session_status() -> None
     assert status_spy[0][0] is CodexStatus.WAITING_APPROVAL
 
 
+def test_handle_notification_filters_claude_sessions_from_ui_and_aggregate() -> None:
+    """Claude sessions in the shared registry should not drive Codex app-server UI."""
+    registry = SessionRegistry()
+    connector = AppServerConnector(AppConfig(app_server_url="ws://127.0.0.1:18731"), registry)
+    connector._update_session(  # noqa: SLF001
+        SessionStatus(
+            session_key="claude::thread-a",
+            thread_id="thread-a",
+            endpoint_id="claude",
+            display_name="claude",
+            status=CodexStatus.ERROR,
+            last_updated=100.0,
+        )
+    )
+    sessions_spy = QSignalSpy(connector.sessions_changed)
+    status_spy = QSignalSpy(connector.status_changed)
+
+    connector._handle_notification(
+        "thread/status/changed",
+        {
+            "endpointId": "vscode-main",
+            "threadId": "thread-b",
+            "status": {"type": "active", "activeFlags": []},
+        },
+    )
+
+    assert [session.endpoint_id for session in sessions_spy[-1][0]] == ["vscode-main"]
+    assert [arguments[0] for arguments in status_spy] == [CodexStatus.WORKING]
+
+
 def test_subscribe_threads_reads_loaded_thread_list_and_updates_registry() -> None:
     """Loaded thread discovery should read each thread and seed session state."""
     registry = SessionRegistry()

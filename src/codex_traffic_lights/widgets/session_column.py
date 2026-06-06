@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 import datetime as dt
+from weakref import ReferenceType, ref
 
 from PyQt5.QtCore import QEasingCurve, QRectF, Qt, QVariantAnimation
-from PyQt5.QtGui import QColor, QFont, QFontMetrics, QPainter, QPen
+from PyQt5.QtGui import QCloseEvent, QColor, QFont, QFontMetrics, QPainter, QPen
 from PyQt5.QtWidgets import QWidget
 
 from codex_traffic_lights.animation.effects import STATUS_EFFECTS, LightEffectParams
@@ -99,8 +100,11 @@ class SessionColumnWidget(QWidget):
             animation.setDuration(effect.period_ms)
             animation.setLoopCount(-1)
             animation.setEasingCurve(QEasingCurve.InOutSine)
+            column_ref = ref(self)
             animation.valueChanged.connect(
-                lambda value, index=light_index: self.set_light_opacity(index, float(value))
+                lambda value=0.0, index=light_index, target=column_ref: (
+                    _apply_animation_value(target, index, value)
+                )
             )
             self._animations.append(animation)
             animation.start()
@@ -129,6 +133,30 @@ class SessionColumnWidget(QWidget):
         for animation in self._animations:
             animation.stop()
         self._animations.clear()
+
+    def closeEvent(self, event: QCloseEvent | None) -> None:  # noqa: N802
+        """Stop mini-lamp animations when the column is closed."""
+        self._stop_animations()
+        super().closeEvent(event)
+
+
+def _apply_animation_value(
+    column_ref: ReferenceType[SessionColumnWidget],
+    light_index: int,
+    value: object,
+) -> None:
+    """Apply one QVariantAnimation value without keeping the column alive."""
+    column = column_ref()
+    if column is None:
+        return
+    column.set_light_opacity(light_index, _animation_float(value))
+
+
+def _animation_float(value: object) -> float:
+    """Return a float for a QVariantAnimation value."""
+    if isinstance(value, int | float):
+        return float(value)
+    return float(str(value))
 
 
 def _tooltip_text(session: SessionStatus) -> str:

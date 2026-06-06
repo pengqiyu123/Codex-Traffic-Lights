@@ -9,7 +9,11 @@ from PyQt5.QtWidgets import QApplication, QFrame, QHBoxLayout, QVBoxLayout, QWid
 from codex_traffic_lights.animation.engine import LightAnimationEngine
 from codex_traffic_lights.models import CodexStatus
 from codex_traffic_lights.session_models import SessionStatus
-from codex_traffic_lights.status_aggregator import aggregate_display_text, aggregate_status
+from codex_traffic_lights.status_aggregator import (
+    aggregate_display_text,
+    aggregate_status,
+    codex_sessions_only,
+)
 from codex_traffic_lights.widgets.header import HeaderWidget
 from codex_traffic_lights.widgets.session_matrix import SessionMatrixWidget
 from codex_traffic_lights.widgets.side_buttons import SideButtonsWidget
@@ -123,7 +127,7 @@ class FramelessMainWindow(QWidget):
 
     def set_sessions(self, sessions: list[SessionStatus]) -> None:
         """Update expanded matrix sessions and compact aggregate text."""
-        self._sessions = list(sessions)
+        self._sessions = codex_sessions_only(list(sessions))
         self.session_matrix.set_sessions(self._sessions)
         aggregate = aggregate_status(self._sessions)
         self.set_status(aggregate)
