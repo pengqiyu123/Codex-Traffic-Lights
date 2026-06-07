@@ -15,6 +15,12 @@ from codex_traffic_lights.widgets.traffic_light import BORDER_COLOR, PANEL_COLOR
 MAX_VISIBLE_SESSIONS = 5
 COLUMN_SPACING = 6
 MATRIX_VERTICAL_PADDING = 16
+BASE_MARGIN = 8
+BASE_OVERFLOW_WIDTH = 28
+BASE_OVERFLOW_HEIGHT = 18
+BASE_OVERFLOW_FONT_SIZE = 9
+MIN_SCALE = 0.5
+MAX_SCALE = 2.0
 
 
 class SessionMatrixWidget(QWidget):
@@ -26,11 +32,12 @@ class SessionMatrixWidget(QWidget):
         self._columns_by_key: dict[str, SessionColumnWidget] = {}
         self._session_columns: list[SessionColumnWidget] = []
         self._overflow_count = 0
+        self._scale = 1.0
         self._overflow_label = QLabel("", self)
         self._overflow_label.setObjectName("session_overflow_label")
         self._overflow_label.setAlignment(Qt.AlignCenter)
-        self._overflow_label.setFixedSize(28, 18)
-        self._overflow_label.setFont(QFont("Consolas", 9, QFont.Bold))
+        self._overflow_label.setFixedSize(BASE_OVERFLOW_WIDTH, BASE_OVERFLOW_HEIGHT)
+        self._overflow_label.setFont(QFont("Consolas", BASE_OVERFLOW_FONT_SIZE, QFont.Bold))
         self._overflow_label.setStyleSheet(
             "color: #6A6A70; background: transparent; border: 1px solid #2A2A30; "
             "border-radius: 8px;"
@@ -41,7 +48,7 @@ class SessionMatrixWidget(QWidget):
         self._layout.setContentsMargins(8, 8, 8, 8)
         self._layout.setSpacing(COLUMN_SPACING)
         self._layout.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
-        self.setMaximumHeight(COLUMN_HEIGHT + MATRIX_VERTICAL_PADDING)
+        self._apply_scaled_geometry()
 
     @property
     def session_columns(self) -> list[SessionColumnWidget]:
@@ -57,6 +64,15 @@ class SessionMatrixWidget(QWidget):
     def overflow_text(self) -> str:
         """Return the visible overflow label text."""
         return self._overflow_label.text()
+
+    def set_scale(self, scale: float) -> None:
+        """Scale matrix spacing, visible columns, and overflow marker."""
+        self._scale = max(MIN_SCALE, min(MAX_SCALE, scale))
+        self._apply_scaled_geometry()
+        for column in self._columns_by_key.values():
+            column.set_scale(self._scale)
+        self._position_overflow_label()
+        self.update()
 
     def set_sessions(self, sessions: list[SessionStatus]) -> None:
         """Create, update, and remove visible session columns."""
@@ -83,10 +99,12 @@ class SessionMatrixWidget(QWidget):
             maybe_column = self._columns_by_key.get(session.session_key)
             if maybe_column is None:
                 column = SessionColumnWidget(session)
+                column.set_scale(self._scale)
                 self._columns_by_key[session.session_key] = column
             else:
                 column = maybe_column
                 column.set_session(session)
+                column.set_scale(self._scale)
 
             self._layout.removeWidget(column)
             self._layout.insertWidget(index, column)
@@ -119,7 +137,23 @@ class SessionMatrixWidget(QWidget):
 
     def _position_overflow_label(self) -> None:
         """Place the overflow marker without adding another matrix column."""
+        margin = round(BASE_MARGIN * self._scale)
         self._overflow_label.move(
-            max(4, self.width() - self._overflow_label.width() - 8),
-            8,
+            max(4, self.width() - self._overflow_label.width() - margin),
+            margin,
         )
+
+    def _apply_scaled_geometry(self) -> None:
+        """Apply scaled matrix padding, spacing, marker, and height."""
+        margin = round(BASE_MARGIN * self._scale)
+        self._layout.setContentsMargins(margin, margin, margin, margin)
+        self._layout.setSpacing(round(COLUMN_SPACING * self._scale))
+        self.setMaximumHeight(
+            round(COLUMN_HEIGHT * self._scale) + round(MATRIX_VERTICAL_PADDING * self._scale)
+        )
+        self._overflow_label.setFixedSize(
+            round(BASE_OVERFLOW_WIDTH * self._scale),
+            round(BASE_OVERFLOW_HEIGHT * self._scale),
+        )
+        font_size = max(6, round(BASE_OVERFLOW_FONT_SIZE * self._scale))
+        self._overflow_label.setFont(QFont("Consolas", font_size, QFont.Bold))

@@ -19,6 +19,12 @@ COLUMN_WIDTH = 44
 COLUMN_HEIGHT = 56
 MINI_LAMP_DIAMETER = 10
 MINI_LAMP_GAP = 4
+BASE_NAME_FONT_SIZE = 7
+BASE_NAME_TOP = 44
+BASE_NAME_HEIGHT = 12
+BASE_TOP_PADDING = 4
+MIN_SCALE = 0.5
+MAX_SCALE = 2.0
 
 _LAMP_NAMES = ("red", "yellow", "green")
 
@@ -29,13 +35,13 @@ class SessionColumnWidget(QWidget):
     def __init__(self, session: SessionStatus, parent: QWidget | None = None) -> None:
         """Create a session column bound to one session snapshot."""
         super().__init__(parent)
-        self.setFixedWidth(COLUMN_WIDTH)
-        self.setMinimumHeight(COLUMN_HEIGHT)
+        self._scale = 1.0
         self._session = session
         self._opacities: list[float] = [0.08, 0.08, 0.08]
         self._effects: list[LightEffectParams] = list(STATUS_EFFECTS[session.status])
         self._animations: list[QVariantAnimation] = []
         self._applied_status: CodexStatus | None = None
+        self._apply_scaled_geometry()
         self.set_session(session)
 
     @property
@@ -52,6 +58,17 @@ class SessionColumnWidget(QWidget):
     def has_status_dot(self) -> bool:
         """Return whether this compact column paints an extra status dot."""
         return False
+
+    @property
+    def mini_lamp_diameter(self) -> int:
+        """Return the scaled mini lamp diameter."""
+        return max(5, round(MINI_LAMP_DIAMETER * self._scale))
+
+    def set_scale(self, scale: float) -> None:
+        """Scale column geometry, mini lamps, and label typography."""
+        self._scale = max(MIN_SCALE, min(MAX_SCALE, scale))
+        self._apply_scaled_geometry()
+        self.update()
 
     def set_session(self, session: SessionStatus) -> None:
         """Update session data, tooltip, effects, and repaint."""
@@ -76,11 +93,13 @@ class SessionColumnWidget(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(Qt.NoPen)
 
-        left = (self.width() - MINI_LAMP_DIAMETER) / 2
-        top = 4.0
+        diameter = self.mini_lamp_diameter
+        gap = max(2, round(MINI_LAMP_GAP * self._scale))
+        left = (self.width() - diameter) / 2
+        top = BASE_TOP_PADDING * self._scale
         for index, lamp_name in enumerate(_LAMP_NAMES):
-            y = top + index * (MINI_LAMP_DIAMETER + MINI_LAMP_GAP)
-            rect = QRectF(left, y, MINI_LAMP_DIAMETER, MINI_LAMP_DIAMETER)
+            y = top + index * (diameter + gap)
+            rect = QRectF(left, y, diameter, diameter)
             _paint_lamp(
                 painter,
                 rect,
@@ -121,13 +140,34 @@ class SessionColumnWidget(QWidget):
 
     def _paint_name(self, painter: QPainter) -> None:
         """Paint the single-line truncated session name."""
-        font = QFont("Consolas", 7)
+        font = QFont("Consolas", max(5, round(BASE_NAME_FONT_SIZE * self._scale)))
         font.setFamilies(["Consolas", "JetBrains Mono", "Source Code Pro"])
         painter.setFont(font)
         painter.setPen(QPen(QColor("#8A8A8F")))
         metrics = QFontMetrics(font)
-        text = metrics.elidedText(self._session.display_name, Qt.ElideRight, self.width() - 4)
-        painter.drawText(QRectF(2, 44, self.width() - 4, 12), Qt.AlignCenter, text)
+        margin = max(2, round(2 * self._scale))
+        text = metrics.elidedText(
+            self._session.display_name,
+            Qt.ElideRight,
+            self.width() - margin * 2,
+        )
+        painter.drawText(
+            QRectF(
+                margin,
+                BASE_NAME_TOP * self._scale,
+                self.width() - margin * 2,
+                BASE_NAME_HEIGHT * self._scale,
+            ),
+            Qt.AlignCenter,
+            text,
+        )
+
+    def _apply_scaled_geometry(self) -> None:
+        """Apply scaled fixed column geometry."""
+        self.setFixedSize(
+            round(COLUMN_WIDTH * self._scale),
+            round(COLUMN_HEIGHT * self._scale),
+        )
 
     def _stop_animations(self) -> None:
         """Stop and forget mini-lamp animations."""

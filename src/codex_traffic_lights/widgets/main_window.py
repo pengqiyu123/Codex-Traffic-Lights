@@ -211,6 +211,7 @@ class FramelessMainWindow(QWidget):
         self.header.set_scale(self.window_scale)
         self.status_bar.set_scale(self.window_scale)
         self.side_buttons.set_scale(self.window_scale)
+        self.session_matrix.set_scale(self.window_scale)
         if self.is_expanded:
             self.traffic_light.set_orientation("horizontal")
             self.traffic_light.set_lamp_diameter(round(30 * self.window_scale))

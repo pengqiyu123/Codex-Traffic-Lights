@@ -114,6 +114,7 @@ class ConversationSummary:
     turns: list[TurnSummary] = field(default_factory=list)
     approval_signals: list[str] = field(default_factory=list)
     user_input_signals: list[str] = field(default_factory=list)
+    plan_confirmation_signals: list[str] = field(default_factory=list)
     signal_patch_paths: list[str] = field(default_factory=list)
 
     @property
@@ -138,6 +139,7 @@ class StatusTranscript:
     turn_count: int
     approval_signals: tuple[str, ...] = ()
     user_input_signals: tuple[str, ...] = ()
+    plan_confirmation_signals: tuple[str, ...] = ()
     signal_patch_paths: tuple[str, ...] = ()
     source: str = ENDPOINT_ID
 
@@ -161,6 +163,7 @@ class StatusTranscript:
             "turnCount": self.turn_count,
             "approvalSignals": list(self.approval_signals),
             "userInputSignals": list(self.user_input_signals),
+            "planConfirmationSignals": list(self.plan_confirmation_signals),
             "signalPatchPaths": list(self.signal_patch_paths),
         }
 
@@ -234,6 +237,10 @@ class ConversationStore:
                 state_mapping.get("threadRuntimeStatus"),
             )
             self._apply_active_flags(summary, state_mapping.get("activeFlags"))
+            self._apply_plan_confirmation(
+                summary,
+                state_mapping.get("threadGoalResumeConfirmation"),
+            )
             turns = state_mapping.get("turns")
             if isinstance(turns, list):
                 for turn_index, turn in enumerate(turns):
@@ -286,6 +293,9 @@ class ConversationStore:
                 self._apply_active_flags(summary, value)
             elif isinstance(value, str):
                 _append_unique(summary.active_flags, value)
+            return
+        if path[0] == "threadGoalResumeConfirmation":
+            self._apply_plan_confirmation_patch(summary, path, value)
             return
         if path[0] != "turns":
             return
@@ -349,6 +359,28 @@ class ConversationStore:
         if not isinstance(value, list):
             return
         summary.active_flags = [flag for flag in value if isinstance(flag, str)]
+
+    def _apply_plan_confirmation(
+        self,
+        summary: ConversationSummary,
+        value: object,
+    ) -> None:
+        summary.plan_confirmation_signals = []
+        signal = _extract_plan_confirmation_signal(value)
+        if signal is not None:
+            summary.plan_confirmation_signals = [f"threadGoalResumeConfirmation:{signal}"]
+
+    def _apply_plan_confirmation_patch(
+        self,
+        summary: ConversationSummary,
+        path: list[object],
+        value: object,
+    ) -> None:
+        if len(path) == 1 or value is None or value is False:
+            self._apply_plan_confirmation(summary, value)
+            return
+        if len(path) == 2 and path[1] in {"status", "state", "type", "kind", "phase"}:
+            self._apply_plan_confirmation(summary, value)
 
     def _record_signals(
         self,
@@ -694,6 +726,7 @@ def _transcript_from_summary(summary: ConversationSummary) -> StatusTranscript:
         last_turn_started_at_ms,
         runtime_status_type=summary.runtime_status_type,
         active_flags=summary.active_flags,
+        plan_confirmation_signals=summary.plan_confirmation_signals,
     )
     return StatusTranscript(
         conversation_id=summary.conversation_id,
@@ -708,6 +741,7 @@ def _transcript_from_summary(summary: ConversationSummary) -> StatusTranscript:
         turn_count=len(summary.turns),
         approval_signals=tuple(summary.approval_signals),
         user_input_signals=tuple(summary.user_input_signals),
+        plan_confirmation_signals=tuple(summary.plan_confirmation_signals),
         signal_patch_paths=tuple(summary.signal_patch_paths),
     )
 
@@ -797,6 +831,7 @@ def _has_observable_status(summary: ConversationSummary) -> bool:
     return (
         bool(summary.approval_signals)
         or bool(summary.user_input_signals)
+        or bool(summary.plan_confirmation_signals)
         or summary.runtime_status_type is not None
         or bool(summary.active_flags)
         or (last_turn is not None and last_turn.status is not None)
@@ -812,6 +847,7 @@ def _product_status(
     *,
     runtime_status_type: str | None = None,
     active_flags: list[str] | None = None,
+    plan_confirmation_signals: list[str] | None = None,
 ) -> CodexStatus:
     """Map sanitized IPC fields into the six product statuses."""
     del last_turn_started_at_ms, now_ms
@@ -824,6 +860,8 @@ def _product_status(
             all_user_input_signals.append(f"activeFlag:{flag}")
 
     if all_approval_signals:
+        return CodexStatus.WAITING_APPROVAL
+    if plan_confirmation_signals:
         return CodexStatus.WAITING_APPROVAL
     if all_user_input_signals:
         return CodexStatus.WAITING_USER_INPUT
@@ -867,6 +905,40 @@ def _is_user_input_signal(signal_type: str) -> bool:
         or "user_input_request" in lowered
         or "waitingonuserinput" in compact
     )
+
+
+def _extract_plan_confirmation_signal(value: object) -> str | None:
+    if value is None or value is False:
+        return None
+    if value is True:
+        return "present"
+    if isinstance(value, str):
+        return _plan_confirmation_state(value)
+    if isinstance(value, Mapping):
+        for key in ("status", "state", "type", "kind", "phase"):
+            if key not in value:
+                continue
+            state = value.get(key)
+            if isinstance(state, str):
+                return _plan_confirmation_state(state)
+            if state is True:
+                return "present"
+            if state is None or state is False:
+                continue
+            return None
+    return None
+
+
+def _plan_confirmation_state(value: str) -> str | None:
+    lowered = value.casefold()
+    compact = lowered.replace("-", "_").replace(" ", "_")
+    resolved_terms = ("accepted", "approved", "confirmed", "completed", "done", "resolved")
+    if any(term in compact for term in resolved_terms):
+        return None
+    waiting_terms = ("pending", "waiting", "confirm", "approval", "apply_plan", "resume")
+    if any(term in compact for term in waiting_terms):
+        return compact[:48]
+    return None
 
 
 def _session_key(conversation_id: str) -> str:

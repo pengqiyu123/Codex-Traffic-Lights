@@ -69,6 +69,23 @@ def test_session_matrix_uses_compact_content_height() -> None:
     assert matrix.maximumHeight() <= COLUMN_HEIGHT + 20
 
 
+def test_session_matrix_scales_columns_spacing_and_overflow_marker() -> None:
+    """Expanded zoom should scale matrix columns, spacing, and overflow marker."""
+    matrix = SessionMatrixWidget()
+    matrix.set_sessions([make_session(index) for index in range(7)])
+    default_height = matrix.maximumHeight()
+    default_spacing = matrix.layout().spacing()
+    default_marker_size = matrix._overflow_label.size()
+    default_column_width = matrix.session_columns[0].width()
+
+    matrix.set_scale(2.0)
+
+    assert matrix.maximumHeight() > default_height
+    assert matrix.layout().spacing() > default_spacing
+    assert matrix._overflow_label.width() > default_marker_size.width()
+    assert matrix.session_columns[0].width() > default_column_width
+
+
 def test_main_window_expanded_mode_uses_matrix_and_sessions() -> None:
     """Expanded main window should expose a compact multi-session panel."""
     window = FramelessMainWindow()
@@ -88,6 +105,18 @@ def test_main_window_expanded_mode_uses_matrix_and_sessions() -> None:
     assert window.session_matrix.maximumHeight() <= COLUMN_HEIGHT + 20
     assert len(window.session_matrix.session_columns) == 2
     assert window.status_bar.status_text == "待审批确认 · 2 会话"
+
+
+def test_main_window_expanded_scale_resizes_mini_lamps() -> None:
+    """Window zoom should propagate into expanded mini session lamps."""
+    window = FramelessMainWindow()
+    window.set_sessions([make_session(0, CodexStatus.WORKING)])
+    window.toggle_expanded()
+    default_diameter = window.session_matrix.session_columns[0].mini_lamp_diameter
+
+    window.set_window_scale(2.0)
+
+    assert window.session_matrix.session_columns[0].mini_lamp_diameter > default_diameter
 
 
 def test_main_window_expanded_status_text_uses_compact_height() -> None:

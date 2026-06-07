@@ -51,6 +51,20 @@ def test_session_column_locks_pixel_size_and_status() -> None:
     assert column.has_status_dot is False
 
 
+def test_session_column_scales_column_and_mini_lamps() -> None:
+    """Expanded zoom should resize mini lamps and their column geometry."""
+    column = SessionColumnWidget(make_session(CodexStatus.WORKING))
+    default_width = column.width()
+    default_height = column.minimumHeight()
+    default_diameter = column.mini_lamp_diameter
+
+    column.set_scale(2.0)
+
+    assert column.width() > default_width
+    assert column.minimumHeight() > default_height
+    assert column.mini_lamp_diameter > default_diameter
+
+
 def test_session_column_updates_session_tooltip_and_color() -> None:
     """Updating a session should refresh status color and tooltip details."""
     column = SessionColumnWidget(make_session(CodexStatus.IDLE, name="old"))

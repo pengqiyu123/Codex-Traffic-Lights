@@ -248,6 +248,170 @@ def test_snapshot_runtime_active_with_empty_flags_stays_working_for_long_task() 
     assert transcript.product_status is CodexStatus.WORKING
 
 
+def test_snapshot_detects_plan_resume_confirmation_without_plan_text() -> None:
+    """Plan implementation confirmation should map to approval without leaking plan text."""
+    store = ConversationStore()
+
+    transcript = summarize_ipc_message(
+        _broadcast(
+            "thread-a",
+            {
+                "type": "snapshot",
+                "revision": 1,
+                "conversationState": {
+                    "id": "thread-a",
+                    "threadRuntimeStatus": {"type": "idle"},
+                    "threadGoalResumeConfirmation": {
+                        "type": "pending",
+                        "plan": "secret implementation plan",
+                    },
+                    "turns": [{"status": "completed"}],
+                },
+            },
+        ),
+        store,
+    )
+
+    assert transcript is not None
+    data = transcript.to_json_dict()
+    assert transcript.product_status is CodexStatus.WAITING_APPROVAL
+    assert data["planConfirmationSignals"] == ["threadGoalResumeConfirmation:pending"]
+    assert "secret implementation plan" not in json.dumps(data)
+
+
+def test_plan_confirmation_checks_later_status_like_fields() -> None:
+    """Plan confirmation should use a later explicit state field if earlier fields are empty."""
+    store = ConversationStore()
+
+    transcript = summarize_ipc_message(
+        _broadcast(
+            "thread-a",
+            {
+                "type": "snapshot",
+                "revision": 1,
+                "conversationState": {
+                    "id": "thread-a",
+                    "threadRuntimeStatus": {"type": "idle"},
+                    "threadGoalResumeConfirmation": {
+                        "status": None,
+                        "type": "pending",
+                    },
+                    "turns": [{"status": "completed"}],
+                },
+            },
+        ),
+        store,
+    )
+
+    assert transcript is not None
+    assert transcript.product_status is CodexStatus.WAITING_APPROVAL
+    assert transcript.to_json_dict()["planConfirmationSignals"] == [
+        "threadGoalResumeConfirmation:pending"
+    ]
+
+
+def test_patch_detects_plan_resume_confirmation_after_idle() -> None:
+    """Plan confirmation patches should beat idle/completed status."""
+    store = ConversationStore()
+    summarize_ipc_message(
+        _broadcast(
+            "thread-a",
+            {
+                "type": "snapshot",
+                "revision": 1,
+                "conversationState": {
+                    "id": "thread-a",
+                    "threadRuntimeStatus": {"type": "idle"},
+                    "turns": [{"status": "completed"}],
+                },
+            },
+        ),
+        store,
+    )
+
+    transcript = summarize_ipc_message(
+        _broadcast(
+            "thread-a",
+            {
+                "type": "patches",
+                "baseRevision": 1,
+                "revision": 2,
+                "patches": [
+                    {
+                        "op": "add",
+                        "path": ["threadGoalResumeConfirmation"],
+                        "value": {"status": "waiting_for_confirmation", "body": "secret plan"},
+                    }
+                ],
+            },
+        ),
+        store,
+    )
+
+    assert transcript is not None
+    data = transcript.to_json_dict()
+    assert transcript.product_status is CodexStatus.WAITING_APPROVAL
+    assert data["planConfirmationSignals"] == [
+        "threadGoalResumeConfirmation:waiting_for_confirmation"
+    ]
+    assert "secret plan" not in json.dumps(data)
+
+
+def test_runtime_idle_without_plan_confirmation_stays_idle() -> None:
+    """Idle runtime should not become approval without an explicit plan signal."""
+    store = ConversationStore()
+
+    transcript = summarize_ipc_message(
+        _broadcast(
+            "thread-a",
+            {
+                "type": "snapshot",
+                "revision": 1,
+                "conversationState": {
+                    "id": "thread-a",
+                    "threadRuntimeStatus": {"type": "idle"},
+                    "turns": [{"status": "completed"}],
+                },
+            },
+        ),
+        store,
+    )
+
+    assert transcript is not None
+    assert transcript.product_status is CodexStatus.IDLE
+
+
+def test_resolved_plan_confirmation_object_stays_idle() -> None:
+    """Resolved plan confirmation objects should not be treated as waiting approval."""
+    store = ConversationStore()
+
+    transcript = summarize_ipc_message(
+        _broadcast(
+            "thread-a",
+            {
+                "type": "snapshot",
+                "revision": 1,
+                "conversationState": {
+                    "id": "thread-a",
+                    "threadRuntimeStatus": {"type": "idle"},
+                    "threadGoalResumeConfirmation": {
+                        "status": "completed",
+                        "plan": "secret implementation plan",
+                    },
+                    "turns": [{"status": "completed"}],
+                },
+            },
+        ),
+        store,
+    )
+
+    assert transcript is not None
+    data = transcript.to_json_dict()
+    assert transcript.product_status is CodexStatus.IDLE
+    assert data["planConfirmationSignals"] == []
+    assert "secret implementation plan" not in json.dumps(data)
+
+
 @pytest.mark.parametrize(
     ("active_flags", "expected"),
     [
