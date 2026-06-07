@@ -41,3 +41,5 @@ htmlcov/
 # Project specific
 *.log
 1.md
+process/code-light/
+test_process/approval-diagnosis-*.json

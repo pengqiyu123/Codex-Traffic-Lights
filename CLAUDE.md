@@ -34,6 +34,11 @@ ruff format src/ tests/
 
 # 打包为单 exe
 pyinstaller --onefile --windowed --name codex-traffic-lights src/codex_traffic_lights/__main__.py
+
+# 视觉验收截图（Windows PowerShell）
+powershell -ExecutionPolicy Bypass -File .agents/skills/screenshot/scripts/take_screenshot.ps1 -Mode temp -ActiveWindow
+# 或指定区域
+powershell -ExecutionPolicy Bypass -File .agents/skills/screenshot/scripts/take_screenshot.ps1 -Mode temp -Region 100,200,800,600
 ```
 
 ## Repository Structure
@@ -99,11 +104,29 @@ scripts/                     # 构建脚本
 7. **贴边隐藏**：检测窗口位置是否靠近屏幕边缘，触发 `QPropertyAnimation` 滑出/滑入。
 8. **打包**：PyInstaller 单 exe，`--windowed` 隐藏控制台窗口。
 
+## UI 设计规范
+
+**设计方向文档**：[docs/UI-Design-Direction.md](docs/UI-Design-Direction.md)（必须先读再改 UI 代码）
+
+**核心审美**：工业仪表 / 精密设备指示灯（航空仪表盘 LED、服务器状态灯），不是网页/App。
+
+**关键约束**：
+1. 灯光要有物理质感：玻璃罩、金属边框、内发光、外光晕，不是扁平色块
+2. 灭灯用同色系极暗版本，不是灰色
+3. 底色 #0D0D0F（微冷蓝调黑），不是中性 #1A1A1A
+4. 按钮：QPainter 矢量图标，禁止 emoji
+5. 字体：Consolas / JetBrains Mono 等宽，禁止 Arial/system font
+6. 动画：InOutSine 缓动，禁止线性
+7. Compact（72x220）+ Expanded（~200x400）双形态
+
+**禁止事项**：见 UI-Design-Direction.md 末尾 Anti-Slop 清单。
+
 ## Known Issues
 
 - 前版 8 态 PRD 是 AI 推测，已废弃。ClaudeCode 下发任务时必须先参考 `docs/Codex-State-Audit.md`。
 - app-server 不可用时，降级检测无法准确区分审批等待/用户输入等待，只能显示 `WORKING`。
 - Windows 某些安全软件可能阻止无边框置顶窗口。
+- 多 VSCode Codex 插件实例：需要 app-server 连接后通过 threadId 聚合，纯 psutil 无法解决。
 
 ## Contribution Guidelines
 
