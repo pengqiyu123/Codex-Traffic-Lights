@@ -19,6 +19,8 @@ COLUMN_WIDTH = 44
 COLUMN_HEIGHT = 56
 MINI_LAMP_DIAMETER = 10
 MINI_LAMP_GAP = 4
+MIN_COLUMN_WIDTH = 36
+MAX_COLUMN_WIDTH = 76
 BASE_NAME_FONT_SIZE = 7
 BASE_NAME_TOP = 44
 BASE_NAME_HEIGHT = 12
@@ -36,6 +38,7 @@ class SessionColumnWidget(QWidget):
         """Create a session column bound to one session snapshot."""
         super().__init__(parent)
         self._scale = 1.0
+        self._base_column_width = COLUMN_WIDTH
         self._session = session
         self._opacities: list[float] = [0.08, 0.08, 0.08]
         self._effects: list[LightEffectParams] = list(STATUS_EFFECTS[session.status])
@@ -67,6 +70,12 @@ class SessionColumnWidget(QWidget):
     def set_scale(self, scale: float) -> None:
         """Scale column geometry, mini lamps, and label typography."""
         self._scale = max(MIN_SCALE, min(MAX_SCALE, scale))
+        self._apply_scaled_geometry()
+        self.update()
+
+    def set_base_column_width(self, width: int) -> None:
+        """Set the unscaled column width used for adaptive expanded labels."""
+        self._base_column_width = max(MIN_COLUMN_WIDTH, min(MAX_COLUMN_WIDTH, width))
         self._apply_scaled_geometry()
         self.update()
 
@@ -165,7 +174,7 @@ class SessionColumnWidget(QWidget):
     def _apply_scaled_geometry(self) -> None:
         """Apply scaled fixed column geometry."""
         self.setFixedSize(
-            round(COLUMN_WIDTH * self._scale),
+            round(self._base_column_width * self._scale),
             round(COLUMN_HEIGHT * self._scale),
         )
 

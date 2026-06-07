@@ -9,7 +9,13 @@ from PyQt5.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PyQt5.QtWidgets import QHBoxLayout, QLabel, QWidget
 
 from codex_traffic_lights.session_models import SessionStatus
-from codex_traffic_lights.widgets.session_column import COLUMN_HEIGHT, SessionColumnWidget
+from codex_traffic_lights.widgets.session_column import (
+    COLUMN_HEIGHT,
+    COLUMN_WIDTH,
+    MAX_COLUMN_WIDTH,
+    MIN_COLUMN_WIDTH,
+    SessionColumnWidget,
+)
 from codex_traffic_lights.widgets.traffic_light import BORDER_COLOR, PANEL_COLOR
 
 MAX_VISIBLE_SESSIONS = 5
@@ -71,6 +77,7 @@ class SessionMatrixWidget(QWidget):
         self._apply_scaled_geometry()
         for column in self._columns_by_key.values():
             column.set_scale(self._scale)
+        self._apply_adaptive_column_widths()
         self._position_overflow_label()
         self.update()
 
@@ -113,6 +120,7 @@ class SessionMatrixWidget(QWidget):
         self._overflow_count = max(0, len(ordered_sessions) - MAX_VISIBLE_SESSIONS)
         self._overflow_label.setText(f"+{self._overflow_count}" if self._overflow_count else "")
         self._overflow_label.setVisible(self._overflow_count > 0)
+        self._apply_adaptive_column_widths()
         self._position_overflow_label()
         self.update()
 
@@ -133,6 +141,7 @@ class SessionMatrixWidget(QWidget):
     def resizeEvent(self, event: object) -> None:  # noqa: N802
         """Keep the overflow marker pinned to the matrix edge."""
         del event
+        self._apply_adaptive_column_widths()
         self._position_overflow_label()
 
     def _position_overflow_label(self) -> None:
@@ -157,3 +166,33 @@ class SessionMatrixWidget(QWidget):
         )
         font_size = max(6, round(BASE_OVERFLOW_FONT_SIZE * self._scale))
         self._overflow_label.setFont(QFont("Consolas", font_size, QFont.Bold))
+
+    def _apply_adaptive_column_widths(self) -> None:
+        """Give sparse session labels more width without exceeding matrix bounds."""
+        if not self._session_columns:
+            return
+        column_width = self._adaptive_base_column_width(len(self._session_columns))
+        for column in self._session_columns:
+            column.set_base_column_width(column_width)
+
+    def _adaptive_base_column_width(self, visible_count: int) -> int:
+        """Return an unscaled column width based on visible matrix width."""
+        if visible_count <= 0:
+            return COLUMN_WIDTH
+
+        margin = round(BASE_MARGIN * self._scale)
+        spacing = round(COLUMN_SPACING * self._scale)
+        overflow_width = self._overflow_label.width() if self._overflow_count else 0
+        overflow_gap = spacing if self._overflow_count else 0
+        available_width = (
+            self.width()
+            - margin * 2
+            - spacing * max(0, visible_count - 1)
+            - overflow_width
+            - overflow_gap
+        )
+        if available_width <= 0:
+            return COLUMN_WIDTH
+        scaled_column_width = available_width / visible_count
+        base_width = round(scaled_column_width / self._scale)
+        return max(MIN_COLUMN_WIDTH, min(MAX_COLUMN_WIDTH, base_width))

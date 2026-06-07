@@ -11,6 +11,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import net from "node:net";
+import { pathToFileURL } from "node:url";
 
 const DEFAULT_WINDOWS_PIPE = "\\\\.\\pipe\\codex-ipc";
 const INITIALIZING_CLIENT_ID = "initializing-client";
@@ -33,6 +34,7 @@ const INTERESTING_OBJECT_KEYS = new Set([
   "lastTurn",
   "patches",
   "status",
+  "threadGoalResumeConfirmation",
   "threadRuntimeStatus",
   "turns",
 ]);
@@ -175,7 +177,7 @@ function frame(message) {
   return Buffer.concat([header, body]);
 }
 
-function summarizeMessage(message) {
+export function summarizeMessage(message) {
   const summary = {
     type: safeScalar(message?.type, "type"),
     method: safeScalar(message?.method, "method"),
@@ -222,6 +224,10 @@ function summarizeConversationState(state) {
     sessionIdTail: tail(state.sessionId),
     hostId: safeScalar(state.hostId, "hostId"),
     threadRuntimeStatus: summarizeObjectShape(state.threadRuntimeStatus, 0),
+    threadGoalResumeConfirmation: summarizeObjectShape(
+      state.threadGoalResumeConfirmation,
+      0,
+    ),
     activeFlags: summarizeList(state.activeFlags, "activeFlags", 0),
     turnCount: turns.length,
     recentTurns: turns.slice(-3).map((turn, index) => summarizeTurn(turn, turns.length - 3 + index)),
@@ -268,11 +274,23 @@ function summarizePatch(patch) {
     return { kind: typeof patch };
   }
   const path = Array.isArray(patch.path) ? patch.path.slice(0, 8).map(String) : [];
+  const valueKey = safePatchValueKey(path);
   return {
     op: safeScalar(patch.op, "op"),
     path: `/${path.join("/")}`,
-    value: summarizeObjectShape(patch.value, 0),
+    value:
+      valueKey === ""
+        ? summarizeObjectShape(patch.value, 0)
+        : summarizePrimitive(patch.value, valueKey),
   };
+}
+
+function safePatchValueKey(path) {
+  if (path[0] !== "threadGoalResumeConfirmation") {
+    return "";
+  }
+  const lastPart = path[path.length - 1] ?? "";
+  return SAFE_VALUE_KEYS.has(lastPart) ? lastPart : "";
 }
 
 function summarizeObjectShape(value, depth) {
@@ -341,4 +359,6 @@ function tail(value) {
   return typeof value === "string" && value.length > 6 ? value.slice(-6) : value;
 }
 
-main();
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main();
+}

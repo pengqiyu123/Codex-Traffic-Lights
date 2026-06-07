@@ -134,3 +134,42 @@ IPC probe 成功连接 VSCode Codex IPC，并收到初始化响应：
 2. 如果后续 VSCode Codex 插件版本暴露 `waitingOnApproval` 或 approval item type，再用 live transcript 更新映射。
 3. 不要把 `fileChange`、`commandExecution` 或普通 `inProgress` 推断成审批等待；这些字段也会出现在正常工作流中。
 4. 若必须支持审批提醒，需要另找数据源，例如 VSCode UI 状态、扩展日志、或更底层的插件内部状态，而不是当前 `thread-stream-state-changed` 摘要。
+
+## 2026-06-07 计划最终确认态补充
+
+用户复测发现：计划模式最后停在“是否实施此计划”确认界面时，产品仍显示 `IDLE`。
+
+本轮没有放宽产品映射，也没有把普通 `completed` / `idle` 推断为审批态。原因是旧诊断 JSON 只能证明 `conversationState` 中存在 `threadGoalResumeConfirmation` 这个 key，不能证明它在确认弹窗期间的值形态。
+
+已增强诊断工具：
+
+```text
+test_process/vscode_codex_approval_probe.mjs
+```
+
+新增脱敏能力：
+
+- snapshot 中记录 `threadGoalResumeConfirmation` 的 object keys 和安全状态字段
+- patch 中记录 `/threadGoalResumeConfirmation/...` 路径和安全值
+- 安全值仅包括 `status` / `state` / `type` / `kind` / `phase`、布尔值、null、数组长度、object keys
+- 不记录计划正文、prompt、生成内容、命令文本、cwd、文件路径或 diff
+
+复测采集命令：
+
+```powershell
+node test_process\vscode_codex_approval_probe.mjs --duration 90 --max-events 120 --pretty --output test_process\approval-diagnosis-plan-confirmation.json
+```
+
+采集流程：
+
+1. 启动上面的 probe。
+2. 在 VSCode Codex 中进入计划模式。
+3. 停在“是否实施此计划”确认界面 15-30 秒。
+4. 再选择实施或取消，让确认态退出。
+5. 检查输出中的 `threadGoalResumeConfirmation` 摘要。
+
+后续判定规则：
+
+- 如果安全字段明确为 `pending` / `waiting` / `confirm` / `apply-plan` / `resume`，可以补产品映射。
+- 如果非空对象只在确认界面存在、退出后消失，且没有 resolved/completed 字段，可以考虑把非空 confirmation 对象映射为 `WAITING_APPROVAL`。
+- 如果字段始终为 null/空对象，或 IPC 只暴露 `completed` / `idle`，则记录为上游不可观测，不改产品逻辑。

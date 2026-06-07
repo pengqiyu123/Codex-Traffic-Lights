@@ -86,6 +86,18 @@ def test_session_matrix_scales_columns_spacing_and_overflow_marker() -> None:
     assert matrix.session_columns[0].width() > default_column_width
 
 
+def test_session_matrix_uses_extra_width_for_fewer_session_names() -> None:
+    """Sparse expanded sessions should use available panel width for longer names."""
+    matrix = SessionMatrixWidget()
+    matrix.resize(240, 80)
+
+    matrix.set_sessions([make_session(0), make_session(1)])
+
+    assert len(matrix.session_columns) == 2
+    assert matrix.session_columns[0].width() > 44
+    assert matrix.session_columns[1].width() > 44
+
+
 def test_main_window_expanded_mode_uses_matrix_and_sessions() -> None:
     """Expanded main window should expose a compact multi-session panel."""
     window = FramelessMainWindow()
