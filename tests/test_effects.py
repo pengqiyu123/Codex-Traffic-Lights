@@ -83,7 +83,7 @@ def test_idle_green_light_has_no_halo() -> None:
 
 
 def test_waiting_approval_status_has_yellow_and_green_active() -> None:
-    """WAITING_APPROVAL should flash yellow and green together."""
+    """WAITING_APPROVAL should animate yellow and green together as active lamps."""
     red, yellow, green = STATUS_EFFECTS[CodexStatus.WAITING_APPROVAL]
 
     assert red.mode is LightMode.OFF

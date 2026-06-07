@@ -64,6 +64,15 @@ def test_session_column_updates_session_tooltip_and_color() -> None:
     assert CodexStatus.ERROR.label in column.toolTip()
 
 
+def test_session_column_waiting_approval_lights_alternate_phase() -> None:
+    """Mini approval lamps should reuse the same alternating phase as the main lights."""
+    column = SessionColumnWidget(make_session(CodexStatus.WAITING_APPROVAL))
+
+    assert len(column._animations) == 2
+    assert [animation.property("light_index") for animation in column._animations] == [1, 2]
+    assert [animation.property("phase_ms") for animation in column._animations] == [0, 1000]
+
+
 def test_session_column_renders_without_error() -> None:
     """Session column painting should render into a pixmap without crashing."""
     column = SessionColumnWidget(make_session(CodexStatus.WAITING_USER_INPUT))

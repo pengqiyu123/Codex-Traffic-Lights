@@ -6,11 +6,12 @@ from collections.abc import Callable
 from typing import cast
 from weakref import ReferenceType, ref
 
-from PyQt5.QtCore import QEasingCurve, QVariantAnimation
+from PyQt5.QtCore import QVariantAnimation
 from PyQt5.QtWidgets import QWidget
 
 from codex_traffic_lights.animation.effects import STATUS_EFFECTS, LightEffectParams
-from codex_traffic_lights.models import CodexStatus, LightMode
+from codex_traffic_lights.animation.timeline import create_opacity_timeline, start_opacity_timeline
+from codex_traffic_lights.models import CodexStatus
 
 
 class LightAnimationEngine:
@@ -26,33 +27,25 @@ class LightAnimationEngine:
         self._stop_all()
         for light_index, effect in enumerate(STATUS_EFFECTS[status]):
             self._apply_effect(light_index, effect)
-            animation = self._create_animation(effect)
-            if animation is None:
+            timeline = create_opacity_timeline(
+                effect,
+                status=status,
+                light_index=light_index,
+                parent=self.traffic_light_widget,
+            )
+            if timeline is None:
                 self._apply_opacity(light_index, effect.max_opacity)
                 continue
 
             self._apply_opacity(light_index, effect.min_opacity)
             engine_ref = ref(self)
-            animation.valueChanged.connect(
+            timeline.animation.valueChanged.connect(
                 lambda value=0.0, index=light_index, target=engine_ref: (
                     _apply_animation_value(target, index, value)
                 )
             )
-            self._animations.append(animation)
-            animation.start()
-
-    def _create_animation(self, effect: LightEffectParams) -> QVariantAnimation | None:
-        """Create a QVariantAnimation for dynamic effects."""
-        if effect.period_ms <= 0 or effect.mode in {LightMode.OFF, LightMode.SOLID}:
-            return None
-
-        animation = QVariantAnimation(self.traffic_light_widget)
-        animation.setStartValue(effect.min_opacity)
-        animation.setEndValue(effect.max_opacity)
-        animation.setDuration(effect.period_ms)
-        animation.setLoopCount(-1)
-        animation.setEasingCurve(QEasingCurve.InOutSine)
-        return animation
+            self._animations.append(timeline.animation)
+            start_opacity_timeline(timeline)
 
     def _stop_all(self) -> None:
         """Stop and forget all active animations."""

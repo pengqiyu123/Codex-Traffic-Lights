@@ -61,6 +61,18 @@ def test_set_status_creates_running_animation_for_dynamic_effect() -> None:
     assert animation.state() == QAbstractAnimation.Running
 
 
+def test_waiting_approval_main_lights_alternate_phase() -> None:
+    """Approval yellow and green lamps should use alternating slow-flash phases."""
+    widget = RecordingTrafficLightWidget()
+    engine = LightAnimationEngine(widget)
+
+    engine.set_status(CodexStatus.WAITING_APPROVAL)
+
+    assert len(engine._animations) == 2
+    assert [animation.property("light_index") for animation in engine._animations] == [1, 2]
+    assert [animation.property("phase_ms") for animation in engine._animations] == [0, 1000]
+
+
 def test_set_status_stops_existing_animations_before_starting_new_status() -> None:
     """Changing status should stop animations from the previous status."""
     widget = RecordingTrafficLightWidget()

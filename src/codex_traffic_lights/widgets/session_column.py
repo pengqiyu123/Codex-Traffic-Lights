@@ -5,11 +5,12 @@ from __future__ import annotations
 import datetime as dt
 from weakref import ReferenceType, ref
 
-from PyQt5.QtCore import QEasingCurve, QRectF, Qt, QVariantAnimation
+from PyQt5.QtCore import QRectF, Qt, QVariantAnimation
 from PyQt5.QtGui import QCloseEvent, QColor, QFont, QFontMetrics, QPainter, QPen
 from PyQt5.QtWidgets import QWidget
 
 from codex_traffic_lights.animation.effects import STATUS_EFFECTS, LightEffectParams
+from codex_traffic_lights.animation.timeline import create_opacity_timeline, start_opacity_timeline
 from codex_traffic_lights.models import CodexStatus, LightMode
 from codex_traffic_lights.session_models import SessionStatus
 from codex_traffic_lights.widgets.traffic_light import LAMP_PALETTE, STATUS_COLORS, _paint_lamp
@@ -94,20 +95,22 @@ class SessionColumnWidget(QWidget):
                 continue
 
             self._opacities[light_index] = effect.min_opacity
-            animation = QVariantAnimation(self)
-            animation.setStartValue(effect.min_opacity)
-            animation.setEndValue(effect.max_opacity)
-            animation.setDuration(effect.period_ms)
-            animation.setLoopCount(-1)
-            animation.setEasingCurve(QEasingCurve.InOutSine)
+            timeline = create_opacity_timeline(
+                effect,
+                status=status,
+                light_index=light_index,
+                parent=self,
+            )
+            if timeline is None:
+                continue
             column_ref = ref(self)
-            animation.valueChanged.connect(
+            timeline.animation.valueChanged.connect(
                 lambda value=0.0, index=light_index, target=column_ref: (
                     _apply_animation_value(target, index, value)
                 )
             )
-            self._animations.append(animation)
-            animation.start()
+            self._animations.append(timeline.animation)
+            start_opacity_timeline(timeline)
 
     def _paint_name(self, painter: QPainter) -> None:
         """Paint the single-line truncated session name."""
