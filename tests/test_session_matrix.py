@@ -90,6 +90,15 @@ def test_main_window_expanded_mode_uses_matrix_and_sessions() -> None:
     assert window.status_bar.status_text == "待审批确认 · 2 会话"
 
 
+def test_main_window_expanded_status_text_uses_compact_height() -> None:
+    """Expanded status text should not consume the top panel's spare height."""
+    window = FramelessMainWindow()
+
+    window.toggle_expanded()
+
+    assert window.status_bar.maximumHeight() <= 28
+
+
 def test_main_window_expanded_toggle_fades_matrix_content() -> None:
     """Expanded content should fade in during the slide-open transition."""
     window = FramelessMainWindow()

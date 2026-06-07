@@ -168,6 +168,7 @@ class FramelessMainWindow(QWidget):
             self.traffic_light.setFixedHeight(EXPANDED_GLOBAL_HEIGHT - 42)
             self.traffic_light.set_orientation("horizontal")
             self.traffic_light.set_lamp_diameter(round(30 * self.window_scale))
+            self.status_bar.set_compact_height(True)
             self._start_content_fade(0.0, 1.0)
         else:
             self._content_opacity_effect.setOpacity(0.0)
@@ -175,6 +176,7 @@ class FramelessMainWindow(QWidget):
             self.traffic_light.set_lamp_diameter(round(36 * self.window_scale))
             self.traffic_light.setMinimumSize(72, 120)
             self.traffic_light.setMaximumHeight(16777215)
+            self.status_bar.set_compact_height(False)
         self._apply_content_scale()
         self._apply_size(animated=True)
 

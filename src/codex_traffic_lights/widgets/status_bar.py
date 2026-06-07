@@ -10,10 +10,12 @@ from codex_traffic_lights.models import CodexStatus
 
 DEFAULT_STATUS_COLOR = "#FF3B30"
 BASE_FONT_SIZE = 10
+BASE_COMPACT_HEIGHT = 24
 BASE_MARGIN_LEFT = 4
 BASE_MARGIN_TOP = 0
 BASE_MARGIN_RIGHT = 4
 BASE_MARGIN_BOTTOM = 8
+QWIDGETSIZE_MAX = 16_777_215
 
 
 class StatusBarWidget(QWidget):
@@ -28,6 +30,7 @@ class StatusBarWidget(QWidget):
         self._label.setWordWrap(True)
         self._status_color = DEFAULT_STATUS_COLOR
         self._scale = 1.0
+        self._compact_height = False
         self._layout = QVBoxLayout(self)
         self._layout.addWidget(self._label)
         self.set_scale(1.0)
@@ -60,7 +63,13 @@ class StatusBarWidget(QWidget):
             round(BASE_MARGIN_RIGHT * self._scale),
             round(BASE_MARGIN_BOTTOM * self._scale),
         )
+        self._apply_height_mode()
         self._apply_label_style()
+
+    def set_compact_height(self, compact: bool) -> None:
+        """Constrain status text height for the expanded instrument panel."""
+        self._compact_height = compact
+        self._apply_height_mode()
 
     def _apply_label_style(self) -> None:
         """Apply the minimal stylesheet needed for text color."""
@@ -69,3 +78,11 @@ class StatusBarWidget(QWidget):
             f"color: {self._status_color}; font-size: {font_size}px; "
             "font-weight: 600; background: transparent;"
         )
+
+    def _apply_height_mode(self) -> None:
+        """Apply expanded compact height or restore default flexible sizing."""
+        if self._compact_height:
+            self.setFixedHeight(round(BASE_COMPACT_HEIGHT * self._scale))
+            return
+        self.setMinimumHeight(0)
+        self.setMaximumHeight(QWIDGETSIZE_MAX)
