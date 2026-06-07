@@ -9,6 +9,15 @@ from PyQt5.QtGui import QColor, QPainter, QPainterPath, QPen, QPolygonF
 from PyQt5.QtWidgets import QPushButton, QVBoxLayout, QWidget
 
 DEFAULT_ACCENT_COLOR = "#FFCC00"
+BASE_BUTTON_SIZE = 26
+BASE_ICON_INSET = 6
+BASE_ICON_EXTENT = 14
+BASE_STRIP_WIDTH = 32
+BASE_MARGIN_LEFT = 4
+BASE_MARGIN_TOP = 12
+BASE_MARGIN_RIGHT = 2
+BASE_MARGIN_BOTTOM = 12
+BASE_SPACING = 6
 
 
 class PaintedIconButton(QPushButton):
@@ -25,17 +34,30 @@ class PaintedIconButton(QPushButton):
         super().__init__(parent)
         self._icon_name = icon_name
         self._accent_color = QColor(DEFAULT_ACCENT_COLOR)
+        self._scale = 1.0
         self.setObjectName(object_name)
         self.setProperty("icon_name", icon_name)
         self.setCheckable(checkable)
-        self.setFixedSize(26, 26)
+        self.setFixedSize(BASE_BUTTON_SIZE, BASE_BUTTON_SIZE)
         self.setCursor(Qt.PointingHandCursor)
         self.setText("")
         self.setToolTip(_tooltip_for_icon(icon_name))
 
+    @property
+    def icon_extent(self) -> float:
+        """Return the current square icon drawing extent."""
+        return BASE_ICON_EXTENT * self._scale
+
     def set_accent_color(self, color: str) -> None:
         """Set the active-state icon color."""
         self._accent_color = QColor(color)
+        self.update()
+
+    def set_scale(self, scale: float) -> None:
+        """Scale button and vector icon dimensions together."""
+        self._scale = max(0.5, min(2.0, scale))
+        size = round(BASE_BUTTON_SIZE * self._scale)
+        self.setFixedSize(size, size)
         self.update()
 
     def paintEvent(self, event: object) -> None:  # noqa: N802
@@ -55,9 +77,15 @@ class PaintedIconButton(QPushButton):
             painter.setPen(QPen(border_color, 1))
             painter.drawEllipse(circle.adjusted(0.5, 0.5, -0.5, -0.5))
 
-        painter.setPen(QPen(icon_color, 1.5, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
+        painter.setPen(QPen(icon_color, 1.5 * self._scale, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin))
         painter.setBrush(Qt.NoBrush)
-        _paint_icon(painter, self._icon_name, QRectF(6, 6, 14, 14), icon_color)
+        inset = BASE_ICON_INSET * self._scale
+        _paint_icon(
+            painter,
+            self._icon_name,
+            QRectF(inset, inset, self.icon_extent, self.icon_extent),
+            icon_color,
+        )
 
     def _colors_for_state(self) -> tuple[QColor, QColor, QColor | None]:
         """Return background, icon, and optional border colors for current state."""
@@ -89,12 +117,18 @@ class SideButtonsWidget(QWidget):
     def __init__(self, parent: QWidget | None = None) -> None:
         """Create the six PRD-defined side buttons."""
         super().__init__(parent)
-        self.setFixedWidth(32)
+        self._scale = 1.0
+        self.setFixedWidth(BASE_STRIP_WIDTH)
         self.setAttribute(Qt.WA_TranslucentBackground)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 12, 2, 12)
-        layout.setSpacing(6)
+        self._layout = QVBoxLayout(self)
+        self._layout.setContentsMargins(
+            BASE_MARGIN_LEFT,
+            BASE_MARGIN_TOP,
+            BASE_MARGIN_RIGHT,
+            BASE_MARGIN_BOTTOM,
+        )
+        self._layout.setSpacing(BASE_SPACING)
 
         self.notification_button = self._make_button("bell", "notification_button", True)
         self.zoom_out_button = self._make_button("minus", "zoom_out_button")
@@ -111,8 +145,8 @@ class SideButtonsWidget(QWidget):
             self.power_button,
             self.sound_button,
         ]:
-            layout.addWidget(button)
-        layout.addStretch(1)
+            self._layout.addWidget(button)
+        self._layout.addStretch(1)
 
         self.notification_button.toggled.connect(self.notification_toggled)
         self.zoom_out_button.clicked.connect(self.zoom_out)
@@ -125,6 +159,20 @@ class SideButtonsWidget(QWidget):
         """Set the active-state color for all checkable icon buttons."""
         for button in self.findChildren(PaintedIconButton):
             button.set_accent_color(color)
+
+    def set_scale(self, scale: float) -> None:
+        """Scale the side strip, button geometry, and layout rhythm."""
+        self._scale = max(0.5, min(2.0, scale))
+        self.setFixedWidth(round(BASE_STRIP_WIDTH * self._scale))
+        self._layout.setContentsMargins(
+            round(BASE_MARGIN_LEFT * self._scale),
+            round(BASE_MARGIN_TOP * self._scale),
+            round(BASE_MARGIN_RIGHT * self._scale),
+            round(BASE_MARGIN_BOTTOM * self._scale),
+        )
+        self._layout.setSpacing(round(BASE_SPACING * self._scale))
+        for button in self.findChildren(PaintedIconButton):
+            button.set_scale(self._scale)
 
     def _make_button(
         self,

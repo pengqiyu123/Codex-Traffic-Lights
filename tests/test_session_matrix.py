@@ -10,6 +10,7 @@ from PyQt5.QtWidgets import QApplication
 from codex_traffic_lights.models import CodexStatus
 from codex_traffic_lights.session_models import SessionStatus
 from codex_traffic_lights.widgets.main_window import FramelessMainWindow
+from codex_traffic_lights.widgets.session_column import COLUMN_HEIGHT
 from codex_traffic_lights.widgets.session_matrix import MAX_VISIBLE_SESSIONS, SessionMatrixWidget
 
 
@@ -59,6 +60,15 @@ def test_session_matrix_updates_existing_columns_by_session_key() -> None:
     assert matrix.overflow_count == 0
 
 
+def test_session_matrix_uses_compact_content_height() -> None:
+    """Expanded matrix should not consume a large empty lower bay."""
+    matrix = SessionMatrixWidget()
+
+    matrix.set_sessions([make_session(0)])
+
+    assert matrix.maximumHeight() <= COLUMN_HEIGHT + 20
+
+
 def test_main_window_expanded_mode_uses_matrix_and_sessions() -> None:
     """Expanded main window should expose a compact multi-session panel."""
     window = FramelessMainWindow()
@@ -75,8 +85,20 @@ def test_main_window_expanded_mode_uses_matrix_and_sessions() -> None:
     assert window.width() == 272
     assert window.height() <= 340
     assert not window.session_matrix.isHidden()
+    assert window.session_matrix.maximumHeight() <= COLUMN_HEIGHT + 20
     assert len(window.session_matrix.session_columns) == 2
     assert window.status_bar.status_text == "待审批确认 · 2 会话"
+
+
+def test_main_window_expanded_toggle_fades_matrix_content() -> None:
+    """Expanded content should fade in during the slide-open transition."""
+    window = FramelessMainWindow()
+
+    window.toggle_expanded()
+
+    assert window._content_opacity_effect.opacity() == pytest.approx(0.0)
+    assert window._content_fade_animation is not None
+    assert window._content_fade_animation.endValue() == pytest.approx(1.0)
 
 
 def test_main_window_escape_collapses_expanded_mode() -> None:

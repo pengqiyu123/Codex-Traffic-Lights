@@ -9,11 +9,12 @@ from PyQt5.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PyQt5.QtWidgets import QHBoxLayout, QLabel, QWidget
 
 from codex_traffic_lights.session_models import SessionStatus
-from codex_traffic_lights.widgets.session_column import SessionColumnWidget
+from codex_traffic_lights.widgets.session_column import COLUMN_HEIGHT, SessionColumnWidget
 from codex_traffic_lights.widgets.traffic_light import BORDER_COLOR, PANEL_COLOR
 
 MAX_VISIBLE_SESSIONS = 5
 COLUMN_SPACING = 6
+MATRIX_VERTICAL_PADDING = 16
 
 
 class SessionMatrixWidget(QWidget):
@@ -40,6 +41,7 @@ class SessionMatrixWidget(QWidget):
         self._layout.setContentsMargins(8, 8, 8, 8)
         self._layout.setSpacing(COLUMN_SPACING)
         self._layout.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+        self.setMaximumHeight(COLUMN_HEIGHT + MATRIX_VERTICAL_PADDING)
 
     @property
     def session_columns(self) -> list[SessionColumnWidget]:

@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from PyQt5.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QRect, Qt
 from PyQt5.QtGui import QColor, QKeyEvent, QMouseEvent, QPainter, QPainterPath, QPen
-from PyQt5.QtWidgets import QApplication, QFrame, QHBoxLayout, QVBoxLayout, QWidget
+from PyQt5.QtWidgets import (
+    QApplication,
+    QFrame,
+    QGraphicsOpacityEffect,
+    QHBoxLayout,
+    QVBoxLayout,
+    QWidget,
+)
 
 from codex_traffic_lights.animation.engine import LightAnimationEngine
 from codex_traffic_lights.models import CodexStatus
@@ -33,11 +40,12 @@ BASE_BODY_WIDTH = 72
 BASE_BUTTON_WIDTH = 32
 BASE_HEIGHT = 220
 EXPANDED_BODY_WIDTH = 240
-EXPANDED_HEIGHT = 292
-EXPANDED_GLOBAL_HEIGHT = 144
+EXPANDED_HEIGHT = 220
+EXPANDED_GLOBAL_HEIGHT = 88
 EDGE_THRESHOLD = 8
 EDGE_VISIBLE_WIDTH = 8
 ANIMATION_DURATION_MS = 200
+
 
 class InstrumentPanel(QWidget):
     """Paint the floating hardware-panel body."""
@@ -73,6 +81,7 @@ class FramelessMainWindow(QWidget):
         self._hidden_edge: str | None = None
         self._move_animation: QPropertyAnimation | None = None
         self._geometry_animation: QPropertyAnimation | None = None
+        self._content_fade_animation: QPropertyAnimation | None = None
         self._current_status = CodexStatus.OFFLINE
         self._sessions: list[SessionStatus] = []
 
@@ -85,6 +94,9 @@ class FramelessMainWindow(QWidget):
         self.session_matrix = SessionMatrixWidget()
         self.side_buttons = SideButtonsWidget()
         self.animation_engine = LightAnimationEngine(self.traffic_light)
+        self._content_opacity_effect = QGraphicsOpacityEffect(self.session_matrix)
+        self._content_opacity_effect.setOpacity(0.0)
+        self.session_matrix.setGraphicsEffect(self._content_opacity_effect)
 
         self._body = InstrumentPanel()
         self._body.setObjectName("main_body")
@@ -143,6 +155,7 @@ class FramelessMainWindow(QWidget):
     def set_window_scale(self, scale: float) -> None:
         """Set window scale while clamping to the supported 50%-200% range."""
         self.window_scale = round(max(MIN_SCALE, min(MAX_SCALE, scale)), 2)
+        self._apply_content_scale()
         self._apply_size(animated=False)
 
     def toggle_expanded(self) -> None:
@@ -153,11 +166,16 @@ class FramelessMainWindow(QWidget):
         self.session_matrix.setVisible(self.is_expanded)
         if self.is_expanded:
             self.traffic_light.setFixedHeight(EXPANDED_GLOBAL_HEIGHT - 42)
-            self.traffic_light.set_lamp_diameter(22)
+            self.traffic_light.set_orientation("horizontal")
+            self.traffic_light.set_lamp_diameter(round(30 * self.window_scale))
+            self._start_content_fade(0.0, 1.0)
         else:
-            self.traffic_light.set_lamp_diameter(None)
+            self._content_opacity_effect.setOpacity(0.0)
+            self.traffic_light.set_orientation("vertical")
+            self.traffic_light.set_lamp_diameter(round(36 * self.window_scale))
             self.traffic_light.setMinimumSize(72, 120)
             self.traffic_light.setMaximumHeight(16777215)
+        self._apply_content_scale()
         self._apply_size(animated=True)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802
@@ -181,11 +199,42 @@ class FramelessMainWindow(QWidget):
         total_width = round((body_width + BASE_BUTTON_WIDTH) * self.window_scale)
         height = round(height_base * self.window_scale)
         self._body.setFixedWidth(round(body_width * self.window_scale))
-        self.side_buttons.setFixedWidth(round(BASE_BUTTON_WIDTH * self.window_scale))
         if animated and self.isVisible():
             self._animate_geometry(QRect(self.x(), self.y(), total_width, height))
         else:
             self.resize(total_width, height)
+
+    def _apply_content_scale(self) -> None:
+        """Scale inner controls along with the frameless window shell."""
+        self.header.set_scale(self.window_scale)
+        self.status_bar.set_scale(self.window_scale)
+        self.side_buttons.set_scale(self.window_scale)
+        if self.is_expanded:
+            self.traffic_light.set_orientation("horizontal")
+            self.traffic_light.set_lamp_diameter(round(30 * self.window_scale))
+            expanded_lamp_height = round((EXPANDED_GLOBAL_HEIGHT - 42) * self.window_scale)
+            self.traffic_light.setFixedHeight(expanded_lamp_height)
+        else:
+            self.traffic_light.set_orientation("vertical")
+            self.traffic_light.set_lamp_diameter(round(36 * self.window_scale))
+            self.traffic_light.setMinimumSize(
+                round(BASE_BODY_WIDTH * self.window_scale),
+                round(120 * self.window_scale),
+            )
+
+    def _start_content_fade(self, start: float, end: float) -> None:
+        """Fade expanded content in as the panel slides open."""
+        self._content_opacity_effect.setOpacity(start)
+        self._content_fade_animation = QPropertyAnimation(
+            self._content_opacity_effect,
+            b"opacity",
+            self,
+        )
+        self._content_fade_animation.setDuration(ANIMATION_DURATION_MS)
+        self._content_fade_animation.setStartValue(start)
+        self._content_fade_animation.setEndValue(end)
+        self._content_fade_animation.setEasingCurve(QEasingCurve.InOutCubic)
+        self._content_fade_animation.start()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         """Remember the drag origin when the body is pressed."""

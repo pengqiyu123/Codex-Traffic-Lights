@@ -56,10 +56,28 @@ class TrafficLightWidget(QWidget):
         self._opacities: list[float] = [1.0, 0.1, 0.1]
         self._effects: list[LightEffectParams | None] = [None, None, None]
         self._lamp_diameter: int | None = None
+        self._orientation = "vertical"
 
     def set_lamp_diameter(self, diameter: int | None) -> None:
         """Set an explicit lamp diameter, or None to use compact auto sizing."""
         self._lamp_diameter = diameter
+        self.update()
+
+    @property
+    def lamp_diameter(self) -> int:
+        """Return the active lamp diameter used by layout tests and scaling."""
+        return self._lamp_diameter or min(36, max(28, int(self.width() * 0.50)))
+
+    @property
+    def orientation(self) -> str:
+        """Return the lamp layout orientation."""
+        return self._orientation
+
+    def set_orientation(self, orientation: str) -> None:
+        """Set lamp orientation to vertical or horizontal."""
+        if orientation not in {"vertical", "horizontal"}:
+            raise ValueError("orientation must be 'vertical' or 'horizontal'")
+        self._orientation = orientation
         self.update()
 
     @property
@@ -132,18 +150,24 @@ class TrafficLightWidget(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(Qt.NoPen)
 
-        diameter = self._lamp_diameter or min(36, max(28, int(self.width() * 0.50)))
-        gap = 8 if self._lamp_diameter is not None else 12
-        total_height = diameter * 3 + gap * 2
-        top = max(0, (self.height() - total_height) / 2)
-        left = (self.width() - diameter) / 2
+        diameter = self.lamp_diameter
+        gap = max(4, round(diameter * 0.28)) if self._lamp_diameter is not None else 12
+        if self._orientation == "horizontal":
+            total_width = diameter * 3 + gap * 2
+            left = max(0, (self.width() - total_width) / 2)
+            top = (self.height() - diameter) / 2
+        else:
+            total_height = diameter * 3 + gap * 2
+            top = max(0, (self.height() - total_height) / 2)
+            left = (self.width() - diameter) / 2
 
         for index, lamp_name in enumerate(_LAMP_ORDER):
             palette = LAMP_PALETTE[lamp_name]
             opacity = self._opacities[index]
             effect = self._effects[index]
-            y = top + index * (diameter + gap)
-            rect = QRectF(left, y, diameter, diameter)
+            x = left + index * (diameter + gap) if self._orientation == "horizontal" else left
+            y = top if self._orientation == "horizontal" else top + index * (diameter + gap)
+            rect = QRectF(x, y, diameter, diameter)
             _paint_lamp(painter, rect, palette, opacity, effect)
 
     def _set_single_opacity(self, light_index: int, opacity: float) -> None:

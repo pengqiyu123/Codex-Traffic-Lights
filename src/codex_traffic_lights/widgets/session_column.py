@@ -16,10 +16,9 @@ from codex_traffic_lights.session_models import SessionStatus
 from codex_traffic_lights.widgets.traffic_light import LAMP_PALETTE, STATUS_COLORS, _paint_lamp
 
 COLUMN_WIDTH = 44
-COLUMN_HEIGHT = 68
+COLUMN_HEIGHT = 56
 MINI_LAMP_DIAMETER = 10
 MINI_LAMP_GAP = 4
-STATUS_DOT_DIAMETER = 6
 
 _LAMP_NAMES = ("red", "yellow", "green")
 
@@ -48,6 +47,11 @@ class SessionColumnWidget(QWidget):
     def status_color(self) -> str:
         """Return the primary color for the session status."""
         return STATUS_COLORS[self._session.status]
+
+    @property
+    def has_status_dot(self) -> bool:
+        """Return whether this compact column paints an extra status dot."""
+        return False
 
     def set_session(self, session: SessionStatus) -> None:
         """Update session data, tooltip, effects, and repaint."""
@@ -86,7 +90,6 @@ class SessionColumnWidget(QWidget):
             )
 
         self._paint_name(painter)
-        self._paint_status_dot(painter)
 
     def _apply_status_effects(self, status: CodexStatus) -> None:
         """Apply animation effects for the session status."""
@@ -125,15 +128,6 @@ class SessionColumnWidget(QWidget):
         metrics = QFontMetrics(font)
         text = metrics.elidedText(self._session.display_name, Qt.ElideRight, self.width() - 4)
         painter.drawText(QRectF(2, 44, self.width() - 4, 12), Qt.AlignCenter, text)
-
-    def _paint_status_dot(self, painter: QPainter) -> None:
-        """Paint the compact status color dot under the name."""
-        dot_color = QColor(self.status_color)
-        dot_color.setAlphaF(0.9)
-        painter.setBrush(dot_color)
-        painter.setPen(Qt.NoPen)
-        left = (self.width() - STATUS_DOT_DIAMETER) / 2
-        painter.drawEllipse(QRectF(left, 59, STATUS_DOT_DIAMETER, STATUS_DOT_DIAMETER))
 
     def _stop_animations(self) -> None:
         """Stop and forget mini-lamp animations."""

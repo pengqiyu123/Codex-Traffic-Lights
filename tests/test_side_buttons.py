@@ -78,6 +78,20 @@ def test_side_buttons_render_without_error() -> None:
     assert pixmap.size() == QSize(32, 220)
 
 
+def test_side_buttons_scale_buttons_and_icon_area() -> None:
+    """Zoom should resize side controls and their painted icon area."""
+    widget = SideButtonsWidget()
+    button = widget.zoom_in_button
+    default_size = button.size()
+    default_icon_extent = button.icon_extent
+
+    widget.set_scale(2.0)
+
+    assert button.width() > default_size.width()
+    assert button.height() > default_size.height()
+    assert button.icon_extent > default_icon_extent
+
+
 def test_main_window_zoom_buttons_clamp_scale_between_half_and_double() -> None:
     """Main-window zoom controls should clamp scale to 50%-200%."""
     window = FramelessMainWindow()

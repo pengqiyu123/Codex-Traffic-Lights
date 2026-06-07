@@ -9,6 +9,11 @@ from PyQt5.QtWidgets import QLabel, QVBoxLayout, QWidget
 from codex_traffic_lights.models import CodexStatus
 
 DEFAULT_STATUS_COLOR = "#FF3B30"
+BASE_FONT_SIZE = 10
+BASE_MARGIN_LEFT = 4
+BASE_MARGIN_TOP = 0
+BASE_MARGIN_RIGHT = 4
+BASE_MARGIN_BOTTOM = 8
 
 
 class StatusBarWidget(QWidget):
@@ -21,15 +26,12 @@ class StatusBarWidget(QWidget):
         self._label.setObjectName("status_text_label")
         self._label.setAlignment(Qt.AlignCenter)
         self._label.setWordWrap(True)
-        font = QFont("Consolas", 10, QFont.Bold)
-        font.setFamilies(["Consolas", "JetBrains Mono", "Source Code Pro"])
-        self._label.setFont(font)
         self._status_color = DEFAULT_STATUS_COLOR
+        self._scale = 1.0
+        self._layout = QVBoxLayout(self)
+        self._layout.addWidget(self._label)
+        self.set_scale(1.0)
         self._apply_label_style()
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(4, 0, 4, 8)
-        layout.addWidget(self._label)
 
     @property
     def status_text(self) -> str:
@@ -45,9 +47,25 @@ class StatusBarWidget(QWidget):
         self._status_color = color
         self._apply_label_style()
 
+    def set_scale(self, scale: float) -> None:
+        """Scale status text size and padding with the window."""
+        self._scale = max(0.5, min(2.0, scale))
+        font_size = max(7, round(BASE_FONT_SIZE * self._scale))
+        font = QFont("Consolas", font_size, QFont.Bold)
+        font.setFamilies(["Consolas", "JetBrains Mono", "Source Code Pro"])
+        self._label.setFont(font)
+        self._layout.setContentsMargins(
+            round(BASE_MARGIN_LEFT * self._scale),
+            round(BASE_MARGIN_TOP * self._scale),
+            round(BASE_MARGIN_RIGHT * self._scale),
+            round(BASE_MARGIN_BOTTOM * self._scale),
+        )
+        self._apply_label_style()
+
     def _apply_label_style(self) -> None:
         """Apply the minimal stylesheet needed for text color."""
+        font_size = max(7, round(BASE_FONT_SIZE * self._scale))
         self._label.setStyleSheet(
-            f"color: {self._status_color}; font-size: 10px; "
+            f"color: {self._status_color}; font-size: {font_size}px; "
             "font-weight: 600; background: transparent;"
         )

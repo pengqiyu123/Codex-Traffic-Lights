@@ -93,6 +93,17 @@ def test_traffic_light_widget_renders_without_error() -> None:
     assert pixmap.size() == QSize(80, 130)
 
 
+def test_traffic_light_widget_can_render_horizontal_lamps() -> None:
+    """Expanded mode should be able to render the global lamp row horizontally."""
+    widget = TrafficLightWidget()
+
+    widget.set_orientation("horizontal")
+    widget.set_lamp_diameter(32)
+
+    assert widget.orientation == "horizontal"
+    assert widget.lamp_diameter == 32
+
+
 def test_traffic_light_off_lamps_have_subtle_highlight() -> None:
     """Unlit lamps should stay visually dark instead of carrying a bright glass spot."""
     widget = TrafficLightWidget()
@@ -148,6 +159,21 @@ def test_main_window_uses_new_compact_dimensions() -> None:
     assert window.height() == 220
 
 
+def test_main_window_scale_updates_content_dimensions() -> None:
+    """Zoom should scale the lamp body and side controls, not only the frame."""
+    window = FramelessMainWindow()
+    default_button = window.side_buttons.zoom_in_button.size()
+    default_header_height = window.header.height()
+    default_lamp_diameter = window.traffic_light.lamp_diameter
+
+    window.set_window_scale(2.0)
+
+    assert window.side_buttons.zoom_in_button.width() > default_button.width()
+    assert window.side_buttons.zoom_in_button.height() > default_button.height()
+    assert window.header.height() > default_header_height
+    assert window.traffic_light.lamp_diameter > default_lamp_diameter
+
+
 def test_main_window_toggles_expanded_frame() -> None:
     """The settings affordance should toggle the reserved expanded frame."""
     window = FramelessMainWindow()
@@ -159,12 +185,14 @@ def test_main_window_toggles_expanded_frame() -> None:
     assert window.is_expanded is True
     assert window.width() == 272
     assert window.height() <= 340
+    assert window.traffic_light.orientation == "horizontal"
 
     window.toggle_expanded()
 
     assert window.is_expanded is False
     assert window.width() == 104
     assert window.height() == 220
+    assert window.traffic_light.orientation == "vertical"
 
 
 def test_main_window_filters_claude_sessions_from_display_and_aggregate() -> None:

@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import QApplication
 
 from codex_traffic_lights.models import CodexStatus
 from codex_traffic_lights.session_models import SessionStatus
-from codex_traffic_lights.widgets.session_column import SessionColumnWidget
+from codex_traffic_lights.widgets.session_column import COLUMN_HEIGHT, SessionColumnWidget
 from codex_traffic_lights.widgets.traffic_light import STATUS_COLORS
 
 
@@ -44,10 +44,11 @@ def test_session_column_locks_pixel_size_and_status() -> None:
     session = make_session(CodexStatus.WAITING_APPROVAL)
     column = SessionColumnWidget(session)
 
-    assert column.minimumSize() == QSize(44, 68)
+    assert column.minimumSize() == QSize(44, COLUMN_HEIGHT)
     assert column.maximumWidth() == 44
     assert column.session is session
     assert column.status_color == STATUS_COLORS[CodexStatus.WAITING_APPROVAL]
+    assert column.has_status_dot is False
 
 
 def test_session_column_updates_session_tooltip_and_color() -> None:
@@ -76,12 +77,12 @@ def test_session_column_waiting_approval_lights_alternate_phase() -> None:
 def test_session_column_renders_without_error() -> None:
     """Session column painting should render into a pixmap without crashing."""
     column = SessionColumnWidget(make_session(CodexStatus.WAITING_USER_INPUT))
-    column.resize(44, 68)
+    column.resize(44, COLUMN_HEIGHT)
     pixmap = QPixmap(column.size())
 
     column.render(pixmap)
 
-    assert pixmap.size() == QSize(44, 68)
+    assert pixmap.size() == QSize(44, COLUMN_HEIGHT)
 
 
 def test_session_column_keeps_animation_when_status_refreshes() -> None:
