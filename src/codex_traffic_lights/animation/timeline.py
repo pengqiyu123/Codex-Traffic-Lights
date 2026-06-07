@@ -67,9 +67,9 @@ def opacity_keyframes(effect: LightEffectParams) -> tuple[tuple[float, float], .
     if effect.mode is LightMode.INTERMITTENT_BLINK:
         return (
             (0.0, effect.min_opacity),
-            (0.06, effect.max_opacity),
-            (0.5, effect.max_opacity),
-            (0.56, effect.min_opacity),
+            (0.08, effect.max_opacity),
+            (0.68, effect.max_opacity),
+            (0.76, effect.min_opacity),
             (1.0, effect.min_opacity),
         )
     if effect.mode is LightMode.FAST_FLASH:

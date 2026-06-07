@@ -33,7 +33,7 @@ def test_each_status_has_three_legal_light_effects() -> None:
         (LightMode.OFF, 0.03, 0.06, 0),
         (LightMode.SOLID, 0.95, 1.0, 0),
         (LightMode.SLOW_BREATH, 0.3, 1.0, 3000),
-        (LightMode.INTERMITTENT_BLINK, 0.05, 0.75, 1000),
+        (LightMode.INTERMITTENT_BLINK, 0.05, 0.75, 700),
         (LightMode.SLOW_FLASH, 0.08, 0.95, 2000),
         (LightMode.FAST_FLASH, 0.2, 1.0, 300),
     ],
@@ -89,3 +89,13 @@ def test_waiting_approval_status_has_yellow_and_green_active() -> None:
     assert red.mode is LightMode.OFF
     assert yellow.mode is not LightMode.OFF
     assert green.mode is not LightMode.OFF
+
+
+def test_waiting_user_input_status_has_only_yellow_blinking() -> None:
+    """WAITING_USER_INPUT should use a clearer yellow-only intermittent alert."""
+    red, yellow, green = STATUS_EFFECTS[CodexStatus.WAITING_USER_INPUT]
+
+    assert red.mode is LightMode.OFF
+    assert yellow.mode is LightMode.INTERMITTENT_BLINK
+    assert yellow.period_ms == 700
+    assert green.mode is LightMode.OFF

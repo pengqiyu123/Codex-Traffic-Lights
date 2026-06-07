@@ -21,10 +21,17 @@ class LightAnimationEngine:
         """Create an engine bound to the traffic-light widget."""
         self.traffic_light_widget = traffic_light_widget
         self._animations: list[QVariantAnimation] = []
+        self._current_status: CodexStatus | None = None
 
     def set_status(self, status: CodexStatus) -> None:
         """Stop current animations and apply the effect preset for a status."""
+        if status is self._current_status:
+            for light_index, effect in enumerate(STATUS_EFFECTS[status]):
+                self._apply_effect(light_index, effect)
+            return
+
         self._stop_all()
+        self._current_status = status
         for light_index, effect in enumerate(STATUS_EFFECTS[status]):
             self._apply_effect(light_index, effect)
             timeline = create_opacity_timeline(

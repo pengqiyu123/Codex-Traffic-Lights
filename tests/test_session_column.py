@@ -82,3 +82,14 @@ def test_session_column_renders_without_error() -> None:
     column.render(pixmap)
 
     assert pixmap.size() == QSize(44, 68)
+
+
+def test_session_column_keeps_animation_when_status_refreshes() -> None:
+    """Refreshing the same status should not restart mini-lamp animations."""
+    session = make_session(CodexStatus.WAITING_USER_INPUT)
+    column = SessionColumnWidget(session)
+    first_animations = list(column._animations)
+
+    column.set_session(make_session(CodexStatus.WAITING_USER_INPUT))
+
+    assert column._animations == first_animations

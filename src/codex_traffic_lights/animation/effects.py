@@ -54,7 +54,7 @@ INTERMITTENT_BLINK_EFFECT = LightEffectParams(
     mode=LightMode.INTERMITTENT_BLINK,
     min_opacity=0.05,
     max_opacity=0.75,
-    period_ms=1000,
+    period_ms=700,
     halo_enabled=True,
     halo_spread=6,
 )

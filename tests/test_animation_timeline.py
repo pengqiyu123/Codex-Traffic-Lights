@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from PyQt5.QtCore import QObject
 
-from codex_traffic_lights.animation.effects import STATUS_EFFECTS
+from codex_traffic_lights.animation.effects import INTERMITTENT_BLINK_EFFECT, STATUS_EFFECTS
 from codex_traffic_lights.animation.timeline import (
     animation_phase_ms,
     create_opacity_timeline,
@@ -55,3 +55,17 @@ def test_create_timeline_stores_light_index_and_phase() -> None:
     assert timeline.animation.duration() == green.period_ms
     assert timeline.animation.property("light_index") == 2
     assert timeline.animation.property("phase_ms") == green.period_ms // 2
+
+
+def test_intermittent_blink_has_clear_peak_hold() -> None:
+    """User-input blink should visibly reach max before returning to dim."""
+    keyframes = opacity_keyframes(INTERMITTENT_BLINK_EFFECT)
+
+    assert INTERMITTENT_BLINK_EFFECT.period_ms == 700
+    assert keyframes == (
+        (0.0, INTERMITTENT_BLINK_EFFECT.min_opacity),
+        (0.08, INTERMITTENT_BLINK_EFFECT.max_opacity),
+        (0.68, INTERMITTENT_BLINK_EFFECT.max_opacity),
+        (0.76, INTERMITTENT_BLINK_EFFECT.min_opacity),
+        (1.0, INTERMITTENT_BLINK_EFFECT.min_opacity),
+    )

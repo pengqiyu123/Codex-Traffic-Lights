@@ -84,3 +84,21 @@ def test_set_status_stops_existing_animations_before_starting_new_status() -> No
 
     assert old_animation.state() == QAbstractAnimation.Stopped
     assert engine._animations == []
+
+
+def test_repeated_same_status_keeps_running_animation() -> None:
+    """Repeated status refreshes should not restart the visible blink cycle."""
+    widget = RecordingTrafficLightWidget()
+    engine = LightAnimationEngine(widget)
+    engine.set_status(CodexStatus.WAITING_USER_INPUT)
+    first_animation = engine._animations[0]
+    first_effect_updates = list(widget.effect_updates)
+
+    engine.set_status(CodexStatus.WAITING_USER_INPUT)
+
+    assert engine._animations == [first_animation]
+    assert first_animation.state() == QAbstractAnimation.Running
+    assert widget.effect_updates == [
+        *first_effect_updates,
+        *list(enumerate(STATUS_EFFECTS[CodexStatus.WAITING_USER_INPUT])),
+    ]

@@ -36,6 +36,7 @@ class SessionColumnWidget(QWidget):
         self._opacities: list[float] = [0.08, 0.08, 0.08]
         self._effects: list[LightEffectParams] = list(STATUS_EFFECTS[session.status])
         self._animations: list[QVariantAnimation] = []
+        self._applied_status: CodexStatus | None = None
         self.set_session(session)
 
     @property
@@ -50,8 +51,10 @@ class SessionColumnWidget(QWidget):
 
     def set_session(self, session: SessionStatus) -> None:
         """Update session data, tooltip, effects, and repaint."""
+        status_changed = session.status is not self._applied_status
         self._session = session
-        self._apply_status_effects(session.status)
+        if status_changed:
+            self._apply_status_effects(session.status)
         self.setToolTip(_tooltip_text(session))
         self.update()
 
@@ -88,6 +91,7 @@ class SessionColumnWidget(QWidget):
     def _apply_status_effects(self, status: CodexStatus) -> None:
         """Apply animation effects for the session status."""
         self._stop_animations()
+        self._applied_status = status
         self._effects = list(STATUS_EFFECTS[status])
         for light_index, effect in enumerate(self._effects):
             if effect.mode in {LightMode.OFF, LightMode.SOLID} or effect.period_ms <= 0:
