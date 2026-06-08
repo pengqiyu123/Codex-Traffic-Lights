@@ -140,6 +140,29 @@ def test_status_bar_accepts_status_color() -> None:
     assert "#34C759" in status_bar.findChild(type(status_bar._label)).styleSheet()
 
 
+def test_status_bar_default_font_keeps_original_pixel_size() -> None:
+    """Compact/default status text should keep the original 10px visual size."""
+    status_bar = StatusBarWidget()
+
+    assert status_bar._label.font().pixelSize() == 10
+
+
+def test_status_bar_default_font_keeps_compact_monospace_preference() -> None:
+    """Compact/default status text should keep the original coding-font look."""
+    status_bar = StatusBarWidget()
+
+    assert status_bar._label.font().families()[0] == "Consolas"
+
+
+def test_status_bar_expanded_font_prefers_clear_chinese_ui_font() -> None:
+    """Expanded status text should use a clearer Chinese UI font."""
+    status_bar = StatusBarWidget()
+
+    status_bar.set_compact_height(True)
+
+    assert status_bar._label.font().families()[0] == "Microsoft YaHei UI"
+
+
 def test_main_window_set_status_uses_codex_status_label() -> None:
     """Main window should show product labels, not app-server internals."""
     window = FramelessMainWindow()

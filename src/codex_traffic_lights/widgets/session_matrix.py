@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from typing import cast
-
-from PyQt5.QtCore import QRectF, Qt
+from PyQt5.QtCore import QRectF, Qt, QTimer
 from PyQt5.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
 from PyQt5.QtWidgets import QHBoxLayout, QLabel, QWidget
 
@@ -27,6 +25,7 @@ BASE_OVERFLOW_HEIGHT = 18
 BASE_OVERFLOW_FONT_SIZE = 9
 MIN_SCALE = 0.5
 MAX_SCALE = 2.0
+RETIRE_DURATION_MS = 3000
 
 
 class SessionMatrixWidget(QWidget):
@@ -37,6 +36,9 @@ class SessionMatrixWidget(QWidget):
         super().__init__(parent)
         self._columns_by_key: dict[str, SessionColumnWidget] = {}
         self._session_columns: list[SessionColumnWidget] = []
+        self._display_columns: list[SessionColumnWidget] = []
+        self._retiring_keys: set[str] = set()
+        self._retire_timers: dict[str, QTimer] = {}
         self._overflow_count = 0
         self._scale = 1.0
         self._overflow_label = QLabel("", self)
@@ -60,6 +62,11 @@ class SessionMatrixWidget(QWidget):
     def session_columns(self) -> list[SessionColumnWidget]:
         """Return visible session columns in display order."""
         return list(self._session_columns)
+
+    @property
+    def display_columns(self) -> list[SessionColumnWidget]:
+        """Return active plus UI-only retiring columns in display order."""
+        return list(self._display_columns)
 
     @property
     def overflow_count(self) -> int:
@@ -92,17 +99,26 @@ class SessionMatrixWidget(QWidget):
             ),
         )
         visible_sessions = ordered_sessions[:MAX_VISIBLE_SESSIONS]
+        sessions_by_key = {session.session_key: session for session in ordered_sessions}
+        active_keys = {session.session_key for session in ordered_sessions}
         visible_keys = {session.session_key for session in visible_sessions}
+        currently_visible_keys = {column.session.session_key for column in self._session_columns}
 
         for session_key, column in list(self._columns_by_key.items()):
-            if session_key not in visible_keys:
+            if session_key not in active_keys:
+                if session_key in self._retiring_keys:
+                    continue
+                if session_key in currently_visible_keys:
+                    self._start_retiring_session(session_key, column)
+                else:
+                    self._remove_column(session_key, column)
+            elif session_key not in visible_keys:
+                self._cancel_retiring_session(session_key, column, sessions_by_key[session_key])
                 self._layout.removeWidget(column)
-                column.setParent(cast(QWidget, None))
-                column.deleteLater()
-                del self._columns_by_key[session_key]
+                column.hide()
 
         self._session_columns = []
-        for index, session in enumerate(visible_sessions):
+        for session in visible_sessions:
             maybe_column = self._columns_by_key.get(session.session_key)
             if maybe_column is None:
                 column = SessionColumnWidget(session)
@@ -110,13 +126,14 @@ class SessionMatrixWidget(QWidget):
                 self._columns_by_key[session.session_key] = column
             else:
                 column = maybe_column
+                self._cancel_retiring_session(session.session_key, column)
                 column.set_session(session)
                 column.set_scale(self._scale)
 
-            self._layout.removeWidget(column)
-            self._layout.insertWidget(index, column)
+            column.show()
             self._session_columns.append(column)
 
+        self._rebuild_display_layout()
         self._overflow_count = max(0, len(ordered_sessions) - MAX_VISIBLE_SESSIONS)
         self._overflow_label.setText(f"+{self._overflow_count}" if self._overflow_count else "")
         self._overflow_label.setVisible(self._overflow_count > 0)
@@ -169,11 +186,75 @@ class SessionMatrixWidget(QWidget):
 
     def _apply_adaptive_column_widths(self) -> None:
         """Give sparse session labels more width without exceeding matrix bounds."""
-        if not self._session_columns:
+        if not self._display_columns:
             return
-        column_width = self._adaptive_base_column_width(len(self._session_columns))
-        for column in self._session_columns:
+        active_count = len(self._session_columns)
+        retiring_count = len(self._retiring_keys)
+        column_width = self._adaptive_base_column_width(active_count + retiring_count)
+        for column in self._display_columns:
             column.set_base_column_width(column_width)
+
+    def finish_retiring_session(self, session_key: str) -> None:
+        """Immediately remove one retiring session column."""
+        column = self._columns_by_key.get(session_key)
+        timer = self._retire_timers.pop(session_key, None)
+        if timer is not None:
+            timer.stop()
+        self._retiring_keys.discard(session_key)
+        if column is None:
+            return
+        self._remove_column(session_key, column)
+        self._rebuild_display_layout()
+        self._apply_adaptive_column_widths()
+        self._position_overflow_label()
+        self.update()
+
+    def _start_retiring_session(self, session_key: str, column: SessionColumnWidget) -> None:
+        """Keep a removed column briefly as a visual disconnected cue."""
+        if session_key in self._retiring_keys:
+            return
+        self._retiring_keys.add(session_key)
+        column.set_retiring(True)
+        column.show()
+        timer = QTimer(self)
+        timer.setSingleShot(True)
+        timer.timeout.connect(lambda key=session_key: self.finish_retiring_session(key))
+        self._retire_timers[session_key] = timer
+        timer.start(RETIRE_DURATION_MS)
+
+    def _cancel_retiring_session(
+        self,
+        session_key: str,
+        column: SessionColumnWidget,
+        session: SessionStatus | None = None,
+    ) -> None:
+        """Restore a column if the same session reconnects before deletion."""
+        timer = self._retire_timers.pop(session_key, None)
+        if timer is not None:
+            timer.stop()
+        self._retiring_keys.discard(session_key)
+        column.set_retiring(False, session)
+
+    def _remove_column(self, session_key: str, column: SessionColumnWidget) -> None:
+        """Remove a column widget without showing a retirement cue."""
+        self._layout.removeWidget(column)
+        column.setParent(None)
+        column.deleteLater()
+        self._columns_by_key.pop(session_key, None)
+
+    def _rebuild_display_layout(self) -> None:
+        """Show active columns first, followed by UI-only retiring columns."""
+        retiring_columns = [
+            column
+            for key, column in self._columns_by_key.items()
+            if key in self._retiring_keys
+        ]
+        self._display_columns = [*self._session_columns, *retiring_columns]
+        for column in self._display_columns:
+            self._layout.removeWidget(column)
+        for index, column in enumerate(self._display_columns):
+            column.show()
+            self._layout.insertWidget(index, column)
 
     def _adaptive_base_column_width(self, visible_count: int) -> int:
         """Return an unscaled column width based on visible matrix width."""

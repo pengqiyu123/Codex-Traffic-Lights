@@ -173,3 +173,78 @@ node test_process\vscode_codex_approval_probe.mjs --duration 90 --max-events 120
 - 如果安全字段明确为 `pending` / `waiting` / `confirm` / `apply-plan` / `resume`，可以补产品映射。
 - 如果非空对象只在确认界面存在、退出后消失，且没有 resolved/completed 字段，可以考虑把非空 confirmation 对象映射为 `WAITING_APPROVAL`。
 - 如果字段始终为 null/空对象，或 IPC 只暴露 `completed` / `idle`，则记录为上游不可观测，不改产品逻辑。
+
+## 2026-06-07 插件与官网线索补充
+
+官方 OpenAI 文档确认 Codex IDE extension 是受支持的 Codex 客户端，并且 IDE extension 可以在不同 approval mode 间切换；但公开文档没有暴露 `\\.\pipe\codex-ipc`、`threadGoalResumeConfirmation`、`planImplementation` 这类私有 IPC schema。因此计划最终确认态仍必须依赖本地插件代码与 live IPC 样本，不能只靠官网推断。
+
+本地 VSCode Codex 插件版本：
+
+```text
+C:\Users\pengq\.vscode\extensions\openai.chatgpt-26.602.40724-win32-x64
+```
+
+插件代码里发现新的候选信号：
+
+- `threadGoalResumeConfirmation` 在 3 秒 debug sample 中始终是 `null` 形状，不足以解释“是否实施此计划”界面。
+- `recentTurns[].items[]` 中出现 `type = planImplementation`，并且 item keys 包含 `isCompleted` 与 `planContent`。
+- 插件 webview bundle 的状态逻辑包含“存在 `planImplementation` 且 `isCompleted` 为 false 时归为 waiting”的判断。
+
+因此下一轮采样重点从 `threadGoalResumeConfirmation` 转向：
+
+```text
+planImplementation.isCompleted
+```
+
+诊断工具已增强为只记录安全布尔值：
+
+- snapshot 中：`type = planImplementation`、`isCompleted = true/false`
+- patch 中：`/turns/.../items/.../isCompleted` 的布尔值
+- 继续不记录 `planContent`、prompt、生成内容、命令、路径、cwd、diff
+
+复测采集命令不变：
+
+```powershell
+node test_process\vscode_codex_approval_probe.mjs --duration 90 --max-events 120 --pretty --output test_process\approval-diagnosis-plan-confirmation.json
+```
+
+新的判定规则：
+
+- 如果计划最终确认界面期间出现 `planImplementation.isCompleted = false`，且退出确认界面后变为 true 或该 item 消失，可以把该信号映射为 `WAITING_APPROVAL`。
+- 如果 `isCompleted = false` 在普通历史计划项中长期残留，不能直接映射，需要继续找当前 turn 或 runtime 关联字段。
+- 如果确认界面期间没有任何 `planImplementation` / `isCompleted` 变化，继续判定为上游不可观测。
+
+## 2026-06-07 计划最终确认态实测结论
+
+用户随后粘贴了完整 probe 输出，终端滚动区显示不全但附件内容足够确认真实信号：
+
+```json
+{
+  "threadRuntimeStatus": {"type": "idle"},
+  "threadGoalResumeConfirmation": {"kind": "null"},
+  "itemTypes": [
+    {
+      "type": "planImplementation",
+      "isCompleted": false
+    }
+  ]
+}
+```
+
+退出确认界面后，IPC patch 出现：
+
+```json
+{
+  "path": "/turns/119/items/9/isCompleted",
+  "value": true
+}
+```
+
+因此计划最终“是否实施此计划”确认态的产品映射规则已经明确：
+
+- `type = planImplementation` 且 `isCompleted = false`：映射为 `WAITING_APPROVAL`
+- `isCompleted = true`：清除对应等待信号
+- `threadRuntimeStatus.type = idle` 不能覆盖该等待信号
+- 仍然不读取或记录 `planContent`
+
+该规则已接入产品 `vscode_ipc.py`，并新增单元测试覆盖 snapshot、完整 item patch、`isCompleted` patch 清除、敏感字段不泄漏。

@@ -9,8 +9,18 @@ from PyQt5.QtWidgets import QLabel, QVBoxLayout, QWidget
 from codex_traffic_lights.models import CodexStatus
 
 DEFAULT_STATUS_COLOR = "#FF3B30"
+COMPACT_STATUS_FAMILIES = ["Consolas", "JetBrains Mono", "Source Code Pro"]
+EXPANDED_STATUS_FAMILIES = [
+    "Microsoft YaHei UI",
+    "Microsoft YaHei",
+    "Noto Sans CJK SC",
+    "Source Han Sans SC",
+    "Segoe UI",
+]
 BASE_FONT_SIZE = 10
+EXPANDED_FONT_SIZE_BONUS = 1
 BASE_COMPACT_HEIGHT = 24
+COMPACT_MARGIN_BOTTOM = 2
 BASE_MARGIN_LEFT = 4
 BASE_MARGIN_TOP = 0
 BASE_MARGIN_RIGHT = 4
@@ -53,15 +63,13 @@ class StatusBarWidget(QWidget):
     def set_scale(self, scale: float) -> None:
         """Scale status text size and padding with the window."""
         self._scale = max(0.5, min(2.0, scale))
-        font_size = max(7, round(BASE_FONT_SIZE * self._scale))
-        font = QFont("Consolas", font_size, QFont.Bold)
-        font.setFamilies(["Consolas", "JetBrains Mono", "Source Code Pro"])
-        self._label.setFont(font)
+        self._apply_font()
+        bottom_margin = COMPACT_MARGIN_BOTTOM if self._compact_height else BASE_MARGIN_BOTTOM
         self._layout.setContentsMargins(
             round(BASE_MARGIN_LEFT * self._scale),
             round(BASE_MARGIN_TOP * self._scale),
             round(BASE_MARGIN_RIGHT * self._scale),
-            round(BASE_MARGIN_BOTTOM * self._scale),
+            round(bottom_margin * self._scale),
         )
         self._apply_height_mode()
         self._apply_label_style()
@@ -69,14 +77,35 @@ class StatusBarWidget(QWidget):
     def set_compact_height(self, compact: bool) -> None:
         """Constrain status text height for the expanded instrument panel."""
         self._compact_height = compact
+        self.set_scale(self._scale)
         self._apply_height_mode()
+
+    def _font_size(self) -> int:
+        """Return the scaled status font size for the current display mode."""
+        bonus = EXPANDED_FONT_SIZE_BONUS if self._compact_height else 0
+        return max(7, round(BASE_FONT_SIZE * self._scale) + bonus)
+
+    def _font_weight(self) -> int:
+        """Return a stronger status font weight in expanded mode."""
+        return QFont.Black if self._compact_height else QFont.Bold
+
+    def _apply_font(self) -> None:
+        """Apply the current status text font."""
+        families = (
+            EXPANDED_STATUS_FAMILIES
+            if self._compact_height
+            else COMPACT_STATUS_FAMILIES
+        )
+        font = QFont(families[0])
+        font.setFamilies(families)
+        font.setPixelSize(self._font_size())
+        font.setWeight(self._font_weight())
+        self._label.setFont(font)
 
     def _apply_label_style(self) -> None:
         """Apply the minimal stylesheet needed for text color."""
-        font_size = max(7, round(BASE_FONT_SIZE * self._scale))
         self._label.setStyleSheet(
-            f"color: {self._status_color}; font-size: {font_size}px; "
-            "font-weight: 600; background: transparent;"
+            f"color: {self._status_color}; background: transparent;"
         )
 
     def _apply_height_mode(self) -> None:

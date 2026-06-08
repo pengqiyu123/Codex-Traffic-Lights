@@ -109,6 +109,7 @@ class ConversationSummary:
     display_name: str | None = None
     revision: int | None = None
     host_id: str | None = None
+    source_client_id: str | None = None
     runtime_status_type: str | None = None
     active_flags: list[str] = field(default_factory=list)
     turns: list[TurnSummary] = field(default_factory=list)
@@ -141,6 +142,7 @@ class StatusTranscript:
     user_input_signals: tuple[str, ...] = ()
     plan_confirmation_signals: tuple[str, ...] = ()
     signal_patch_paths: tuple[str, ...] = ()
+    source_client_id: str | None = None
     source: str = ENDPOINT_ID
 
     def to_json_dict(self) -> dict[str, object]:
@@ -150,6 +152,7 @@ class StatusTranscript:
             "conversationId": self.conversation_id,
             "displayName": self.display_name,
             "hostId": self.host_id,
+            "sourceClientId": self.source_client_id,
             "revision": self.revision,
             "runtimeStatus": {
                 "type": self.runtime_status_type,
@@ -204,20 +207,22 @@ class ConversationStore:
         self,
         conversation_id: str,
         host_id: str | None,
+        source_client_id: str | None,
         change: Mapping[str, object],
     ) -> ConversationSummary:
         """Apply a ``thread-stream-state-changed`` change."""
         change_type = change.get("type")
         if change_type == "snapshot":
-            return self._apply_snapshot(conversation_id, host_id, change)
+            return self._apply_snapshot(conversation_id, host_id, source_client_id, change)
         if change_type == "patches":
-            return self._apply_patches(conversation_id, host_id, change)
-        return self._get_or_create(conversation_id, host_id)
+            return self._apply_patches(conversation_id, host_id, source_client_id, change)
+        return self._get_or_create(conversation_id, host_id, source_client_id)
 
     def _apply_snapshot(
         self,
         conversation_id: str,
         host_id: str | None,
+        source_client_id: str | None,
         change: Mapping[str, object],
     ) -> ConversationSummary:
         state_payload = change.get("conversationState")
@@ -227,6 +232,7 @@ class ConversationStore:
             display_name=_safe_display_name(conversation_id, state_mapping),
             revision=_int_value(change.get("revision")),
             host_id=host_id,
+            source_client_id=source_client_id,
         )
         if state_mapping is not None:
             state_host = state_mapping.get("hostId")
@@ -255,9 +261,10 @@ class ConversationStore:
         self,
         conversation_id: str,
         host_id: str | None,
+        source_client_id: str | None,
         change: Mapping[str, object],
     ) -> ConversationSummary:
-        summary = self._get_or_create(conversation_id, host_id)
+        summary = self._get_or_create(conversation_id, host_id, source_client_id)
         revision = _int_value(change.get("revision"))
         if revision is not None:
             summary.revision = revision
@@ -274,6 +281,7 @@ class ConversationStore:
                 continue
             value = patch.get("value")
             self._apply_patch_value(summary, path, value)
+            self._record_plan_implementation_patch(summary, path, value)
             self._record_signals(summary, path, value)
         return summary
 
@@ -365,10 +373,17 @@ class ConversationStore:
         summary: ConversationSummary,
         value: object,
     ) -> None:
-        summary.plan_confirmation_signals = []
+        summary.plan_confirmation_signals = [
+            signal
+            for signal in summary.plan_confirmation_signals
+            if not signal.startswith("threadGoalResumeConfirmation:")
+        ]
         signal = _extract_plan_confirmation_signal(value)
         if signal is not None:
-            summary.plan_confirmation_signals = [f"threadGoalResumeConfirmation:{signal}"]
+            _append_unique(
+                summary.plan_confirmation_signals,
+                f"threadGoalResumeConfirmation:{signal}",
+            )
 
     def _apply_plan_confirmation_patch(
         self,
@@ -410,19 +425,91 @@ class ConversationStore:
         if not isinstance(items, list):
             return
         for item_index, item in enumerate(items):
+            self._record_plan_implementation_signal(summary, turn_index, item_index, item)
             self._record_signals(summary, ["turns", turn_index, "items", item_index], item)
 
-    def _get_or_create(self, conversation_id: str, host_id: str | None) -> ConversationSummary:
+    def _record_plan_implementation_signal(
+        self,
+        summary: ConversationSummary,
+        turn_index: int,
+        item_index: int,
+        item: object,
+    ) -> None:
+        if not isinstance(item, Mapping):
+            return
+        if item.get("type") != "planImplementation":
+            return
+        is_completed = item.get("isCompleted")
+        if isinstance(is_completed, bool):
+            self._set_plan_implementation_signal(
+                summary,
+                turn_index,
+                item_index,
+                is_completed,
+            )
+
+    def _record_plan_implementation_patch(
+        self,
+        summary: ConversationSummary,
+        path: list[object],
+        value: object,
+    ) -> None:
+        if len(path) < 4 or path[0] != "turns" or path[2] != "items":
+            return
+        turn_index = path[1]
+        item_index = path[3]
+        if not isinstance(turn_index, int) or not isinstance(item_index, int):
+            return
+        if len(path) == 4:
+            self._record_plan_implementation_signal(
+                summary,
+                turn_index,
+                item_index,
+                value,
+            )
+            return
+        if len(path) == 5 and path[4] == "isCompleted" and isinstance(value, bool):
+            self._set_plan_implementation_signal(summary, turn_index, item_index, value)
+
+    def _set_plan_implementation_signal(
+        self,
+        summary: ConversationSummary,
+        turn_index: int,
+        item_index: int,
+        is_completed: bool,
+    ) -> None:
+        signal = (
+            f"planImplementation:/turns/{turn_index}/items/{item_index}:pending"
+        )
+        if is_completed:
+            with suppress(ValueError):
+                summary.plan_confirmation_signals.remove(signal)
+            return
+        _append_unique(summary.plan_confirmation_signals, signal)
+
+    def remove(self, conversation_id: str) -> None:
+        """Remove one tracked conversation summary."""
+        self._conversations.pop(conversation_id, None)
+
+    def _get_or_create(
+        self,
+        conversation_id: str,
+        host_id: str | None,
+        source_client_id: str | None,
+    ) -> ConversationSummary:
         summary = self._conversations.get(conversation_id)
         if summary is None:
             summary = ConversationSummary(
                 conversation_id=conversation_id,
                 display_name=_safe_display_name(conversation_id, None),
                 host_id=host_id,
+                source_client_id=source_client_id,
             )
             self._conversations[conversation_id] = summary
         elif host_id is not None:
             summary.host_id = host_id
+        if summary is not None and source_client_id is not None:
+            summary.source_client_id = source_client_id
         return summary
 
     def _ensure_turn(self, summary: ConversationSummary, index: int) -> TurnSummary:
@@ -559,6 +646,7 @@ class VSCodeIpcConnector(QThread):
         self._stream_factory = stream_factory
         self._store = ConversationStore()
         self._managed_keys: set[str] = set()
+        self._managed_keys_by_client: dict[str, set[str]] = {}
         self._previous_status = aggregate_status(codex_sessions_only(self.registry.get_all()))
 
     def run(self) -> None:
@@ -588,6 +676,7 @@ class VSCodeIpcConnector(QThread):
                 stream.write_all(encode_frame(build_initialize_request()))
                 emitted += self._consume_stream(stream, deadline, emitted, max_events)
             except OSError:
+                self._clear_managed_sessions()
                 if self._should_continue(deadline, emitted, max_events):
                     time.sleep(max(0.0, self.config.vscode_ipc_reconnect_delay))
             finally:
@@ -610,6 +699,9 @@ class VSCodeIpcConnector(QThread):
                 message = read_frame(stream, self.config.vscode_ipc_read_timeout)
             except IpcReadTimeoutError:
                 continue
+            if self._handle_lifecycle_message(message):
+                count += 1
+                continue
             transcript = summarize_ipc_message(message, self._store)
             if transcript is None:
                 continue
@@ -629,8 +721,87 @@ class VSCodeIpcConnector(QThread):
             last_updated=time.time(),
         )
         self._managed_keys.add(session.session_key)
+        if transcript.source_client_id is not None:
+            self._managed_keys_by_client.setdefault(transcript.source_client_id, set()).add(
+                session.session_key
+            )
         self.registry.update(session)
         self.session_updated.emit(session)
+        sessions = codex_sessions_only(self.registry.get_all())
+        self.sessions_changed.emit(sessions)
+        self._emit_aggregate_if_changed(sessions)
+
+    def _handle_lifecycle_message(self, message: Mapping[str, object]) -> bool:
+        """Handle IPC lifecycle broadcasts that remove tracked sessions."""
+        if message.get("type") != "broadcast":
+            return False
+        method = message.get("method")
+        if method in {"thread-archived", "thread/closed", "thread-closed"}:
+            params = message.get("params")
+            if not isinstance(params, Mapping):
+                return True
+            conversation_id = params.get("conversationId")
+            if not isinstance(conversation_id, str) or not conversation_id:
+                return True
+            self._remove_managed_session(_session_key(conversation_id))
+            self._store.remove(conversation_id)
+            self._emit_sessions_after_removal()
+            return True
+        if method == "client-status-changed":
+            params = message.get("params")
+            if not isinstance(params, Mapping):
+                return True
+            status = params.get("status")
+            if not isinstance(status, str) or status.casefold() != "disconnected":
+                return True
+            client_id = params.get("clientId")
+            if not isinstance(client_id, str) or not client_id:
+                return True
+            removed = self._clear_managed_sessions_for_client(client_id)
+            if removed:
+                self._emit_sessions_after_removal()
+            return True
+        return False
+
+    def _clear_managed_sessions(self) -> None:
+        """Remove sessions owned by this connector after a real IPC disconnect."""
+        if not self._managed_keys:
+            return
+        removed_any = False
+        for session_key in list(self._managed_keys):
+            if self.registry.get(session_key) is not None:
+                removed_any = True
+            self.registry.remove(session_key)
+        self._managed_keys.clear()
+        self._managed_keys_by_client.clear()
+        self._store = ConversationStore()
+        if not removed_any:
+            return
+        sessions = codex_sessions_only(self.registry.get_all())
+        self.sessions_changed.emit(sessions)
+        self._emit_aggregate_if_changed(sessions)
+
+    def _clear_managed_sessions_for_client(self, client_id: str) -> bool:
+        """Remove sessions owned by one disconnected VSCode IPC client."""
+        session_keys = self._managed_keys_by_client.pop(client_id, set())
+        removed_any = False
+        for session_key in session_keys:
+            removed_any = self._remove_managed_session(session_key) or removed_any
+            if session_key.startswith(f"{ENDPOINT_ID}::"):
+                self._store.remove(session_key.split("::", 1)[1])
+        return removed_any
+
+    def _remove_managed_session(self, session_key: str) -> bool:
+        """Remove one managed session from all connector indexes."""
+        removed = self.registry.get(session_key) is not None
+        self.registry.remove(session_key)
+        self._managed_keys.discard(session_key)
+        for client_sessions in self._managed_keys_by_client.values():
+            client_sessions.discard(session_key)
+        return removed
+
+    def _emit_sessions_after_removal(self) -> None:
+        """Emit session and aggregate updates after a session disappears."""
         sessions = codex_sessions_only(self.registry.get_all())
         self.sessions_changed.emit(sessions)
         self._emit_aggregate_if_changed(sessions)
@@ -705,11 +876,13 @@ def summarize_ipc_message(
         return None
     host_id_value = params.get("hostId")
     host_id = host_id_value if isinstance(host_id_value, str) else None
+    source_client_id_value = message.get("sourceClientId")
+    source_client_id = source_client_id_value if isinstance(source_client_id_value, str) else None
     change = params.get("change")
     if not isinstance(change, Mapping):
         return None
 
-    summary = store.apply_change(conversation_id, host_id, change)
+    summary = store.apply_change(conversation_id, host_id, source_client_id, change)
     if not _has_observable_status(summary):
         return None
     return _transcript_from_summary(summary)
@@ -732,6 +905,7 @@ def _transcript_from_summary(summary: ConversationSummary) -> StatusTranscript:
         conversation_id=summary.conversation_id,
         revision=summary.revision,
         host_id=summary.host_id,
+        source_client_id=summary.source_client_id,
         display_name=summary.display_name,
         runtime_status_type=summary.runtime_status_type,
         active_flags=tuple(summary.active_flags),

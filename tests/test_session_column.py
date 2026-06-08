@@ -108,3 +108,24 @@ def test_session_column_keeps_animation_when_status_refreshes() -> None:
     column.set_session(make_session(CodexStatus.WAITING_USER_INPUT))
 
     assert column._animations == first_animations
+
+
+def test_session_column_retiring_mode_uses_red_slow_flash() -> None:
+    """Retiring columns should show a UI-only red one-second exit flash."""
+    column = SessionColumnWidget(make_session(CodexStatus.IDLE))
+
+    column.set_retiring(True)
+
+    assert column.is_retiring is True
+    assert column.session.status is CodexStatus.OFFLINE
+    assert len(column._animations) == 1
+    assert column._animations[0].property("light_index") == 0
+    assert column._animations[0].duration() == 1000
+    assert column._effects[1].mode.value == "off"
+    assert column._effects[2].mode.value == "off"
+    assert "3 秒后隐藏" in column.toolTip()
+
+    column.set_retiring(False, make_session(CodexStatus.WORKING))
+
+    assert column.is_retiring is False
+    assert column.session.status is CodexStatus.WORKING

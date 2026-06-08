@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import datetime as dt
+from dataclasses import replace
 from weakref import ReferenceType, ref
 
 from PyQt5.QtCore import QRectF, Qt, QVariantAnimation
 from PyQt5.QtGui import QCloseEvent, QColor, QFont, QFontMetrics, QPainter, QPen
 from PyQt5.QtWidgets import QWidget
 
-from codex_traffic_lights.animation.effects import STATUS_EFFECTS, LightEffectParams
+from codex_traffic_lights.animation.effects import OFF_EFFECT, STATUS_EFFECTS, LightEffectParams
 from codex_traffic_lights.animation.timeline import create_opacity_timeline, start_opacity_timeline
 from codex_traffic_lights.models import CodexStatus, LightMode
 from codex_traffic_lights.session_models import SessionStatus
@@ -27,6 +28,14 @@ BASE_NAME_HEIGHT = 12
 BASE_TOP_PADDING = 4
 MIN_SCALE = 0.5
 MAX_SCALE = 2.0
+RETIRING_RED_EFFECT = LightEffectParams(
+    mode=LightMode.SLOW_FLASH,
+    min_opacity=0.05,
+    max_opacity=0.95,
+    period_ms=1000,
+    halo_enabled=True,
+    halo_spread=8,
+)
 
 _LAMP_NAMES = ("red", "yellow", "green")
 
@@ -44,6 +53,7 @@ class SessionColumnWidget(QWidget):
         self._effects: list[LightEffectParams] = list(STATUS_EFFECTS[session.status])
         self._animations: list[QVariantAnimation] = []
         self._applied_status: CodexStatus | None = None
+        self._is_retiring = False
         self._apply_scaled_geometry()
         self.set_session(session)
 
@@ -67,6 +77,11 @@ class SessionColumnWidget(QWidget):
         """Return the scaled mini lamp diameter."""
         return max(5, round(MINI_LAMP_DIAMETER * self._scale))
 
+    @property
+    def is_retiring(self) -> bool:
+        """Return whether this column is showing the UI-only exit cue."""
+        return self._is_retiring
+
     def set_scale(self, scale: float) -> None:
         """Scale column geometry, mini lamps, and label typography."""
         self._scale = max(MIN_SCALE, min(MAX_SCALE, scale))
@@ -81,11 +96,29 @@ class SessionColumnWidget(QWidget):
 
     def set_session(self, session: SessionStatus) -> None:
         """Update session data, tooltip, effects, and repaint."""
+        self._is_retiring = False
         status_changed = session.status is not self._applied_status
         self._session = session
         if status_changed:
             self._apply_status_effects(session.status)
         self.setToolTip(_tooltip_text(session))
+        self.update()
+
+    def set_retiring(self, retiring: bool, session: SessionStatus | None = None) -> None:
+        """Show or clear the UI-only disconnected-session exit cue."""
+        if not retiring:
+            self._is_retiring = False
+            if session is not None:
+                self.set_session(session)
+            return
+
+        self._is_retiring = True
+        self._session = replace(self._session, status=CodexStatus.OFFLINE)
+        self._stop_animations()
+        self._applied_status = None
+        self._effects = [RETIRING_RED_EFFECT, OFF_EFFECT, OFF_EFFECT]
+        self._start_effect_animations(CodexStatus.OFFLINE)
+        self.setToolTip(f"{_tooltip_text(self._session)}\n已断开，3 秒后隐藏")
         self.update()
 
     def set_light_opacity(self, light_index: int, opacity: float) -> None:
@@ -124,6 +157,10 @@ class SessionColumnWidget(QWidget):
         self._stop_animations()
         self._applied_status = status
         self._effects = list(STATUS_EFFECTS[status])
+        self._start_effect_animations(status)
+
+    def _start_effect_animations(self, status: CodexStatus) -> None:
+        """Start animation timelines for the currently configured effects."""
         for light_index, effect in enumerate(self._effects):
             if effect.mode in {LightMode.OFF, LightMode.SOLID} or effect.period_ms <= 0:
                 self._opacities[light_index] = effect.max_opacity

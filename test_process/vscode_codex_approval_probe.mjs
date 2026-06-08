@@ -258,7 +258,7 @@ function summarizeItem(item, index) {
   if (!item || typeof item !== "object") {
     return { index, kind: typeof item };
   }
-  return {
+  const summary = {
     index,
     keys: Object.keys(item).sort(),
     type: safeScalar(item.type, "type"),
@@ -267,6 +267,10 @@ function summarizeItem(item, index) {
     kind: safeScalar(item.kind, "kind"),
     activeFlags: summarizeList(item.activeFlags, "activeFlags", 0),
   };
+  if (item.type === "planImplementation" && typeof item.isCompleted === "boolean") {
+    summary.isCompleted = item.isCompleted;
+  }
+  return summary;
 }
 
 function summarizePatch(patch) {
@@ -287,7 +291,8 @@ function summarizePatch(patch) {
 
 function safePatchValueKey(path) {
   if (path[0] !== "threadGoalResumeConfirmation") {
-    return "";
+    const lastPart = path[path.length - 1] ?? "";
+    return lastPart === "isCompleted" ? lastPart : "";
   }
   const lastPart = path[path.length - 1] ?? "";
   return SAFE_VALUE_KEYS.has(lastPart) ? lastPart : "";

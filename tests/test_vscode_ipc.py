@@ -412,6 +412,276 @@ def test_resolved_plan_confirmation_object_stays_idle() -> None:
     assert "secret implementation plan" not in json.dumps(data)
 
 
+def test_snapshot_detects_pending_plan_implementation_without_plan_text() -> None:
+    """Pending plan implementation should beat idle and map to approval."""
+    store = ConversationStore()
+
+    transcript = summarize_ipc_message(
+        _broadcast(
+            "thread-a",
+            {
+                "type": "snapshot",
+                "revision": 1,
+                "conversationState": {
+                    "id": "thread-a",
+                    "threadRuntimeStatus": {"type": "idle"},
+                    "turns": [
+                        {
+                            "status": "completed",
+                            "items": [
+                                {
+                                    "type": "planImplementation",
+                                    "isCompleted": False,
+                                    "planContent": "secret implementation plan",
+                                }
+                            ],
+                        }
+                    ],
+                },
+            },
+        ),
+        store,
+    )
+
+    assert transcript is not None
+    data = transcript.to_json_dict()
+    assert transcript.product_status is CodexStatus.WAITING_APPROVAL
+    assert data["planConfirmationSignals"] == [
+        "planImplementation:/turns/0/items/0:pending"
+    ]
+    assert "secret implementation plan" not in json.dumps(data)
+    assert "planContent" not in json.dumps(data)
+
+
+def test_snapshot_completed_plan_implementation_stays_idle() -> None:
+    """Completed plan implementation items should not be treated as waiting."""
+    store = ConversationStore()
+
+    transcript = summarize_ipc_message(
+        _broadcast(
+            "thread-a",
+            {
+                "type": "snapshot",
+                "revision": 1,
+                "conversationState": {
+                    "id": "thread-a",
+                    "threadRuntimeStatus": {"type": "idle"},
+                    "turns": [
+                        {
+                            "status": "completed",
+                            "items": [
+                                {
+                                    "type": "planImplementation",
+                                    "isCompleted": True,
+                                    "planContent": "secret implementation plan",
+                                }
+                            ],
+                        }
+                    ],
+                },
+            },
+        ),
+        store,
+    )
+
+    assert transcript is not None
+    data = transcript.to_json_dict()
+    assert transcript.product_status is CodexStatus.IDLE
+    assert data["planConfirmationSignals"] == []
+    assert "secret implementation plan" not in json.dumps(data)
+    assert "planContent" not in json.dumps(data)
+
+
+def test_patch_plan_implementation_completion_clears_waiting_state() -> None:
+    """Completion patches should remove the matching plan confirmation signal."""
+    store = ConversationStore()
+    summarize_ipc_message(
+        _broadcast(
+            "thread-a",
+            {
+                "type": "snapshot",
+                "revision": 1,
+                "conversationState": {
+                    "id": "thread-a",
+                    "threadRuntimeStatus": {"type": "idle"},
+                    "turns": [
+                        {
+                            "status": "completed",
+                            "items": [
+                                {"type": "planImplementation", "isCompleted": False}
+                            ],
+                        }
+                    ],
+                },
+            },
+        ),
+        store,
+    )
+
+    transcript = summarize_ipc_message(
+        _broadcast(
+            "thread-a",
+            {
+                "type": "patches",
+                "baseRevision": 1,
+                "revision": 2,
+                "patches": [
+                    {
+                        "op": "replace",
+                        "path": ["turns", 0, "items", 0, "isCompleted"],
+                        "value": True,
+                    }
+                ],
+            },
+        ),
+        store,
+    )
+
+    assert transcript is not None
+    data = transcript.to_json_dict()
+    assert transcript.product_status is CodexStatus.IDLE
+    assert data["planConfirmationSignals"] == []
+
+
+def test_thread_goal_null_patch_keeps_pending_plan_implementation() -> None:
+    """A null thread goal confirmation should not clear plan implementation signals."""
+    store = ConversationStore()
+    summarize_ipc_message(
+        _broadcast(
+            "thread-a",
+            {
+                "type": "snapshot",
+                "revision": 1,
+                "conversationState": {
+                    "id": "thread-a",
+                    "threadRuntimeStatus": {"type": "idle"},
+                    "turns": [
+                        {
+                            "status": "completed",
+                            "items": [
+                                {"type": "planImplementation", "isCompleted": False}
+                            ],
+                        }
+                    ],
+                },
+            },
+        ),
+        store,
+    )
+
+    transcript = summarize_ipc_message(
+        _broadcast(
+            "thread-a",
+            {
+                "type": "patches",
+                "baseRevision": 1,
+                "revision": 2,
+                "patches": [
+                    {
+                        "op": "replace",
+                        "path": ["threadGoalResumeConfirmation"],
+                        "value": None,
+                    }
+                ],
+            },
+        ),
+        store,
+    )
+
+    assert transcript is not None
+    data = transcript.to_json_dict()
+    assert transcript.product_status is CodexStatus.WAITING_APPROVAL
+    assert data["planConfirmationSignals"] == [
+        "planImplementation:/turns/0/items/0:pending"
+    ]
+
+
+def test_patch_detects_pending_plan_implementation_without_plan_text() -> None:
+    """Full plan implementation item patches should map to approval and stay redacted."""
+    store = ConversationStore()
+    summarize_ipc_message(
+        _broadcast(
+            "thread-a",
+            {
+                "type": "snapshot",
+                "revision": 1,
+                "conversationState": {
+                    "id": "thread-a",
+                    "threadRuntimeStatus": {"type": "idle"},
+                    "turns": [{"status": "completed"}],
+                },
+            },
+        ),
+        store,
+    )
+
+    transcript = summarize_ipc_message(
+        _broadcast(
+            "thread-a",
+            {
+                "type": "patches",
+                "baseRevision": 1,
+                "revision": 2,
+                "patches": [
+                    {
+                        "op": "add",
+                        "path": ["turns", 0, "items", 0],
+                        "value": {
+                            "type": "planImplementation",
+                            "isCompleted": False,
+                            "planContent": "secret implementation plan",
+                        },
+                    }
+                ],
+            },
+        ),
+        store,
+    )
+
+    assert transcript is not None
+    data = transcript.to_json_dict()
+    assert transcript.product_status is CodexStatus.WAITING_APPROVAL
+    assert data["planConfirmationSignals"] == [
+        "planImplementation:/turns/0/items/0:pending"
+    ]
+    assert "secret implementation plan" not in json.dumps(data)
+    assert "planContent" not in json.dumps(data)
+
+
+def test_plan_item_and_thread_goal_text_do_not_trigger_approval() -> None:
+    """Plain plan text and thread goals are not approval signals."""
+    store = ConversationStore()
+
+    transcript = summarize_ipc_message(
+        _broadcast(
+            "thread-a",
+            {
+                "type": "snapshot",
+                "revision": 1,
+                "conversationState": {
+                    "id": "thread-a",
+                    "threadRuntimeStatus": {"type": "idle"},
+                    "threadGoal": "secret goal text",
+                    "turns": [
+                        {
+                            "status": "completed",
+                            "items": [{"type": "plan", "text": "secret plan"}],
+                        }
+                    ],
+                },
+            },
+        ),
+        store,
+    )
+
+    assert transcript is not None
+    data = transcript.to_json_dict()
+    assert transcript.product_status is CodexStatus.IDLE
+    assert data["planConfirmationSignals"] == []
+    assert "secret goal text" not in json.dumps(data)
+    assert "secret plan" not in json.dumps(data)
+
+
 @pytest.mark.parametrize(
     ("active_flags", "expected"),
     [
@@ -675,6 +945,158 @@ def test_connector_keeps_connection_open_after_read_timeout() -> None:
     assert registry.get("vscode-ipc::thread-a").status is CodexStatus.WORKING  # type: ignore[union-attr]
 
 
+def test_connector_clears_managed_sessions_after_disconnect() -> None:
+    """A broken VSCode IPC pipe should clear managed sessions and emit OFFLINE."""
+    registry = SessionRegistry()
+    stream_factory = DisconnectAfterMessageStreamFactory()
+    connector = VSCodeIpcConnector(
+        AppConfig(vscode_ipc_reconnect_delay=0.01),
+        registry,
+        stream_factory=stream_factory,
+    )
+    sessions_spy = QSignalSpy(connector.sessions_changed)
+    status_spy = QSignalSpy(connector.status_changed)
+
+    connector._run_loop(duration=0.05)  # noqa: SLF001
+
+    assert registry.get("vscode-ipc::thread-a") is None
+    assert sessions_spy[-1][0] == []
+    assert [arguments[0] for arguments in status_spy][-1] is CodexStatus.OFFLINE
+
+
+def test_connector_disconnect_preserves_non_vscode_sessions() -> None:
+    """Disconnect cleanup should only remove sessions owned by the IPC connector."""
+    registry = SessionRegistry()
+    registry.update(
+        SessionStatus(
+            session_key="app-server::thread-b",
+            thread_id="thread-b",
+            endpoint_id="app-server",
+            display_name="repo-b",
+            status=CodexStatus.IDLE,
+            last_updated=1_700_000_000.0,
+        )
+    )
+    stream_factory = DisconnectAfterMessageStreamFactory()
+    connector = VSCodeIpcConnector(
+        AppConfig(vscode_ipc_reconnect_delay=0.01),
+        registry,
+        stream_factory=stream_factory,
+    )
+    sessions_spy = QSignalSpy(connector.sessions_changed)
+    status_spy = QSignalSpy(connector.status_changed)
+
+    connector._run_loop(duration=0.05)  # noqa: SLF001
+
+    remaining = registry.get("app-server::thread-b")
+    assert remaining is not None
+    assert registry.get("vscode-ipc::thread-a") is None
+    assert sessions_spy[-1][0] == [remaining]
+    assert [arguments[0] for arguments in status_spy][-1] is CodexStatus.IDLE
+
+
+def test_connector_removes_archived_thread_session() -> None:
+    """A thread archive broadcast should remove that conversation from the UI list."""
+    registry = SessionRegistry()
+    connector = VSCodeIpcConnector(AppConfig(), registry)
+    sessions_spy = QSignalSpy(connector.sessions_changed)
+    status_spy = QSignalSpy(connector.status_changed)
+    connector._handle_transcript(  # noqa: SLF001
+        _transcript(
+            "thread-a",
+            "local",
+            1,
+            CodexStatus.WORKING,
+            "inProgress",
+            source_client_id="client-a",
+        )
+    )
+
+    connector._handle_lifecycle_message(  # noqa: SLF001
+        {
+            "type": "broadcast",
+            "method": "thread-archived",
+            "params": {"conversationId": "thread-a", "hostId": "local"},
+        }
+    )
+
+    assert registry.get("vscode-ipc::thread-a") is None
+    assert sessions_spy[-1][0] == []
+    assert [arguments[0] for arguments in status_spy][-1] is CodexStatus.OFFLINE
+
+
+def test_connector_client_disconnect_clears_only_that_clients_sessions() -> None:
+    """Closing one VSCode window should not remove sessions from another window."""
+    registry = SessionRegistry()
+    connector = VSCodeIpcConnector(AppConfig(), registry)
+    sessions_spy = QSignalSpy(connector.sessions_changed)
+    status_spy = QSignalSpy(connector.status_changed)
+    connector._handle_transcript(  # noqa: SLF001
+        _transcript(
+            "thread-a",
+            "local",
+            1,
+            CodexStatus.WORKING,
+            "inProgress",
+            source_client_id="client-a",
+        )
+    )
+    connector._handle_transcript(  # noqa: SLF001
+        _transcript(
+            "thread-b",
+            "local",
+            1,
+            CodexStatus.IDLE,
+            "completed",
+            source_client_id="client-b",
+        )
+    )
+
+    connector._handle_lifecycle_message(  # noqa: SLF001
+        {
+            "type": "broadcast",
+            "method": "client-status-changed",
+            "params": {
+                "clientId": "client-a",
+                "clientType": "codex-webview",
+                "status": "disconnected",
+            },
+        }
+    )
+
+    remaining = registry.get("vscode-ipc::thread-b")
+    assert registry.get("vscode-ipc::thread-a") is None
+    assert remaining is not None
+    assert sessions_spy[-1][0] == [remaining]
+    assert [arguments[0] for arguments in status_spy][-1] is CodexStatus.IDLE
+
+
+def test_connector_client_connect_status_does_not_clear_sessions() -> None:
+    """Non-disconnect client status broadcasts should be ignored."""
+    registry = SessionRegistry()
+    connector = VSCodeIpcConnector(AppConfig(), registry)
+    connector._handle_transcript(  # noqa: SLF001
+        _transcript(
+            "thread-a",
+            "local",
+            1,
+            CodexStatus.WORKING,
+            "inProgress",
+            source_client_id="client-a",
+        )
+    )
+
+    connector._handle_lifecycle_message(  # noqa: SLF001
+        {
+            "type": "broadcast",
+            "method": "client-status-changed",
+            "params": {"clientId": "client-a", "status": "connected"},
+        }
+    )
+
+    assert registry.get("vscode-ipc::thread-a") is not None
+
+
 def test_connector_respects_disabled_config() -> None:
     """Disabled IPC config should avoid opening the named pipe."""
     stream_factory = FlakyStreamFactory()
@@ -728,6 +1150,36 @@ class TimeoutThenMessageStreamFactory:
     def __call__(self) -> TimeoutThenMessageStream:
         self.calls += 1
         return TimeoutThenMessageStream(
+            [
+                {"type": "response", "method": "initialize", "resultType": "success"},
+                _broadcast(
+                    "thread-a",
+                    {
+                        "type": "snapshot",
+                        "revision": 1,
+                        "conversationState": {
+                            "id": "thread-a",
+                            "turns": [
+                                {"status": "inProgress", "params": {"threadId": "thread-a"}}
+                            ],
+                        },
+                    },
+                ),
+            ]
+        )
+
+
+class DisconnectAfterMessageStreamFactory:
+    """Return one status update, then disconnect on the next read."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def __call__(self) -> MemoryStream:
+        self.calls += 1
+        if self.calls > 1:
+            raise OSError("pipe still closed")
+        return MemoryStream(
             [
                 {"type": "response", "method": "initialize", "resultType": "success"},
                 _broadcast(
@@ -824,6 +1276,7 @@ def _transcript(
     product_status: CodexStatus,
     last_turn_status: str,
     last_turn_started_at_ms: int | None = None,
+    source_client_id: str | None = None,
 ) -> object:
     from codex_traffic_lights.vscode_ipc import StatusTranscript
 
@@ -831,6 +1284,7 @@ def _transcript(
         conversation_id=conversation_id,
         revision=revision,
         host_id=host_id,
+        source_client_id=source_client_id,
         display_name=None,
         runtime_status_type=None,
         active_flags=(),
