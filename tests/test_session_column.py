@@ -9,7 +9,11 @@ from PyQt5.QtWidgets import QApplication
 
 from codex_traffic_lights.models import CodexStatus
 from codex_traffic_lights.session_models import SessionStatus
-from codex_traffic_lights.widgets.session_column import COLUMN_HEIGHT, SessionColumnWidget
+from codex_traffic_lights.widgets.session_column import (
+    COLUMN_HEIGHT,
+    MINI_LAMP_DIAMETER,
+    SessionColumnWidget,
+)
 from codex_traffic_lights.widgets.traffic_light import STATUS_COLORS
 
 
@@ -40,7 +44,7 @@ def make_session(
 
 
 def test_session_column_locks_pixel_size_and_status() -> None:
-    """Session columns should keep the 44px matrix column contract."""
+    """Session cards should keep the base matrix column contract."""
     session = make_session(CodexStatus.WAITING_APPROVAL)
     column = SessionColumnWidget(session)
 
@@ -49,6 +53,23 @@ def test_session_column_locks_pixel_size_and_status() -> None:
     assert column.session is session
     assert column.status_color == STATUS_COLORS[CodexStatus.WAITING_APPROVAL]
     assert column.has_status_dot is False
+
+
+def test_session_column_uses_larger_card_lamps() -> None:
+    """Expanded session cards should use readable 14px mini lamps."""
+    column = SessionColumnWidget(make_session(CodexStatus.WORKING))
+
+    assert MINI_LAMP_DIAMETER == 14
+    assert column.mini_lamp_diameter == 14
+
+
+def test_session_column_exposes_card_visual_style() -> None:
+    """Session columns should render as project cards, not bare lamp stacks."""
+    column = SessionColumnWidget(make_session(CodexStatus.WORKING))
+
+    assert column.has_card_frame is True
+    assert column.card_margin == 0
+    assert column.has_card_highlight_arc is False
 
 
 def test_session_column_scales_column_and_mini_lamps() -> None:

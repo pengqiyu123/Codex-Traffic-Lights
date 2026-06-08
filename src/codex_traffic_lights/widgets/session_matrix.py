@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from PyQt5.QtCore import QRectF, Qt, QTimer
-from PyQt5.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import QHBoxLayout, QLabel, QWidget
 
 from codex_traffic_lights.session_models import SessionStatus
@@ -14,12 +14,11 @@ from codex_traffic_lights.widgets.session_column import (
     MIN_COLUMN_WIDTH,
     SessionColumnWidget,
 )
-from codex_traffic_lights.widgets.traffic_light import BORDER_COLOR, PANEL_COLOR
 
 MAX_VISIBLE_SESSIONS = 5
 COLUMN_SPACING = 6
-MATRIX_VERTICAL_PADDING = 16
-BASE_MARGIN = 8
+MATRIX_VERTICAL_PADDING = 8
+BASE_MARGIN = 0
 BASE_OVERFLOW_WIDTH = 28
 BASE_OVERFLOW_HEIGHT = 18
 BASE_OVERFLOW_FONT_SIZE = 9
@@ -53,7 +52,7 @@ class SessionMatrixWidget(QWidget):
         self._overflow_label.hide()
 
         self._layout = QHBoxLayout(self)
-        self._layout.setContentsMargins(8, 8, 8, 8)
+        self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(COLUMN_SPACING)
         self._layout.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
         self._apply_scaled_geometry()
@@ -77,6 +76,11 @@ class SessionMatrixWidget(QWidget):
     def overflow_text(self) -> str:
         """Return the visible overflow label text."""
         return self._overflow_label.text()
+
+    @property
+    def has_outer_frame(self) -> bool:
+        """Return whether the matrix paints a containing bay behind cards."""
+        return False
 
     def set_scale(self, scale: float) -> None:
         """Scale matrix spacing, visible columns, and overflow marker."""
@@ -141,20 +145,6 @@ class SessionMatrixWidget(QWidget):
         self._position_overflow_label()
         self.update()
 
-    def paintEvent(self, event: object) -> None:  # noqa: N802
-        """Paint the recessed session matrix bay."""
-        del event
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        rect = self.rect().adjusted(4, 4, -4, -4)
-        path = QPainterPath()
-        path.addRoundedRect(QRectF(rect), 10, 10)
-        painter.setPen(QPen(QColor(BORDER_COLOR), 1))
-        panel = QColor(PANEL_COLOR)
-        panel.setAlphaF(0.62)
-        painter.setBrush(panel)
-        painter.drawPath(path)
-
     def resizeEvent(self, event: object) -> None:  # noqa: N802
         """Keep the overflow marker pinned to the matrix edge."""
         del event
@@ -165,7 +155,7 @@ class SessionMatrixWidget(QWidget):
         """Place the overflow marker without adding another matrix column."""
         margin = round(BASE_MARGIN * self._scale)
         self._overflow_label.move(
-            max(4, self.width() - self._overflow_label.width() - margin),
+            max(0, self.width() - self._overflow_label.width() - margin),
             margin,
         )
 

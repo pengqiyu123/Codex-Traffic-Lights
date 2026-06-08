@@ -100,20 +100,28 @@ class FramelessMainWindow(QWidget):
 
         self._body = InstrumentPanel()
         self._body.setObjectName("main_body")
-        body_layout = QVBoxLayout(self._body)
-        body_layout.setContentsMargins(0, 0, 0, 0)
-        body_layout.setSpacing(0)
-        body_layout.addWidget(self.header)
-        body_layout.addWidget(self.traffic_light, 1)
-        body_layout.addWidget(self.status_bar)
+        self._body_layout = QVBoxLayout(self._body)
+        self._body_layout.setContentsMargins(0, 0, 0, 0)
+        self._body_layout.setSpacing(0)
+        self._body_layout.addWidget(self.header)
+        self._body_layout.addWidget(self.traffic_light, 1)
+        self._body_layout.addWidget(self.status_bar)
+
+        self._expanded_status_stack = QWidget()
+        self._expanded_status_stack.setObjectName("expanded_status_stack")
+        self._expanded_status_stack.hide()
+        self._expanded_status_layout = QVBoxLayout(self._expanded_status_stack)
+        self._expanded_status_layout.setContentsMargins(0, 12, 0, 0)
+        self._expanded_status_layout.setSpacing(0)
 
         self._divider = QFrame()
         self._divider.setFixedHeight(1)
         self._divider.setStyleSheet("background: #2A2A30; border: 0;")
         self._divider.hide()
         self.session_matrix.hide()
-        body_layout.addWidget(self._divider)
-        body_layout.addWidget(self.session_matrix, 1)
+        self._body_layout.addWidget(self._expanded_status_stack)
+        self._body_layout.addWidget(self._divider)
+        self._body_layout.addWidget(self.session_matrix, 1)
 
         root_layout = QHBoxLayout(self)
         root_layout.setContentsMargins(0, 0, 0, 0)
@@ -162,15 +170,18 @@ class FramelessMainWindow(QWidget):
         """Toggle the expanded multi-session matrix frame."""
         self.is_expanded = not self.is_expanded
         self.header.setVisible(not self.is_expanded)
+        self._expanded_status_stack.setVisible(self.is_expanded)
         self._divider.setVisible(self.is_expanded)
         self.session_matrix.setVisible(self.is_expanded)
         if self.is_expanded:
+            self._move_global_status_to_expanded_stack()
             self.traffic_light.setFixedHeight(EXPANDED_GLOBAL_HEIGHT - 42)
             self.traffic_light.set_orientation("horizontal")
             self.traffic_light.set_lamp_diameter(round(30 * self.window_scale))
             self.status_bar.set_compact_height(True)
             self._start_content_fade(0.0, 1.0)
         else:
+            self._move_global_status_to_compact_stack()
             self._content_opacity_effect.setOpacity(0.0)
             self.traffic_light.set_orientation("vertical")
             self.traffic_light.set_lamp_diameter(round(36 * self.window_scale))
@@ -216,14 +227,40 @@ class FramelessMainWindow(QWidget):
             self.traffic_light.set_orientation("horizontal")
             self.traffic_light.set_lamp_diameter(round(30 * self.window_scale))
             expanded_lamp_height = round((EXPANDED_GLOBAL_HEIGHT - 42) * self.window_scale)
+            self._expanded_status_stack.setFixedHeight(
+                round(EXPANDED_GLOBAL_HEIGHT * self.window_scale)
+            )
+            self._expanded_status_layout.setContentsMargins(
+                0,
+                round(12 * self.window_scale),
+                0,
+                0,
+            )
+            self._expanded_status_layout.setSpacing(0)
             self.traffic_light.setFixedHeight(expanded_lamp_height)
+            self.traffic_light.setFixedWidth(round(EXPANDED_BODY_WIDTH * self.window_scale))
         else:
             self.traffic_light.set_orientation("vertical")
             self.traffic_light.set_lamp_diameter(round(36 * self.window_scale))
+            self.traffic_light.setMaximumWidth(16777215)
             self.traffic_light.setMinimumSize(
                 round(BASE_BODY_WIDTH * self.window_scale),
                 round(120 * self.window_scale),
             )
+
+    def _move_global_status_to_expanded_stack(self) -> None:
+        """Place global lamps above secondary status text in expanded mode."""
+        self._body_layout.removeWidget(self.traffic_light)
+        self._body_layout.removeWidget(self.status_bar)
+        self._expanded_status_layout.addWidget(self.traffic_light, 1)
+        self._expanded_status_layout.addWidget(self.status_bar, 0)
+
+    def _move_global_status_to_compact_stack(self) -> None:
+        """Restore global lamps and text to the compact vertical stack."""
+        self._expanded_status_layout.removeWidget(self.traffic_light)
+        self._expanded_status_layout.removeWidget(self.status_bar)
+        self._body_layout.insertWidget(1, self.traffic_light, 1)
+        self._body_layout.insertWidget(2, self.status_bar)
 
     def _start_content_fade(self, start: float, end: float) -> None:
         """Fade expanded content in as the panel slides open."""

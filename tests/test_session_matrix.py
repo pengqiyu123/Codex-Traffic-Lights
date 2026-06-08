@@ -9,7 +9,10 @@ from PyQt5.QtWidgets import QApplication
 
 from codex_traffic_lights.models import CodexStatus
 from codex_traffic_lights.session_models import SessionStatus
-from codex_traffic_lights.widgets.main_window import FramelessMainWindow
+from codex_traffic_lights.widgets.main_window import (
+    EXPANDED_GLOBAL_HEIGHT,
+    FramelessMainWindow,
+)
 from codex_traffic_lights.widgets.session_column import COLUMN_HEIGHT
 from codex_traffic_lights.widgets.session_matrix import (
     MAX_VISIBLE_SESSIONS,
@@ -168,24 +171,39 @@ def test_session_matrix_uses_compact_content_height() -> None:
 
     matrix.set_sessions([make_session(0)])
 
-    assert matrix.maximumHeight() <= COLUMN_HEIGHT + 20
+    assert matrix.maximumHeight() <= COLUMN_HEIGHT + 8
+
+
+def test_session_matrix_uses_tight_card_padding_without_outer_frame() -> None:
+    """The matrix should not draw a second container around project cards."""
+    matrix = SessionMatrixWidget()
+
+    margins = matrix.layout().contentsMargins()
+
+    assert matrix.has_outer_frame is False
+    assert margins.left() == 0
+    assert margins.top() == 0
+    assert margins.right() == 0
+    assert margins.bottom() == 0
 
 
 def test_session_matrix_scales_columns_spacing_and_overflow_marker() -> None:
-    """Expanded zoom should scale matrix columns, spacing, and overflow marker."""
+    """Expanded zoom should scale matrix chrome without overflowing fixed width."""
     matrix = SessionMatrixWidget()
+    matrix.resize(240, 80)
     matrix.set_sessions([make_session(index) for index in range(7)])
     default_height = matrix.maximumHeight()
     default_spacing = matrix.layout().spacing()
     default_marker_size = matrix._overflow_label.size()
-    default_column_width = matrix.session_columns[0].width()
 
     matrix.set_scale(2.0)
 
     assert matrix.maximumHeight() > default_height
     assert matrix.layout().spacing() > default_spacing
     assert matrix._overflow_label.width() > default_marker_size.width()
-    assert matrix.session_columns[0].width() > default_column_width
+    matrix.resize(480, 160)
+    matrix.set_scale(2.0)
+    assert sum(column.width() for column in matrix.session_columns) <= matrix.width()
 
 
 def test_session_matrix_uses_extra_width_for_fewer_session_names() -> None:
@@ -196,8 +214,8 @@ def test_session_matrix_uses_extra_width_for_fewer_session_names() -> None:
     matrix.set_sessions([make_session(0), make_session(1)])
 
     assert len(matrix.session_columns) == 2
-    assert matrix.session_columns[0].width() > 44
-    assert matrix.session_columns[1].width() > 44
+    assert matrix.session_columns[0].width() >= 116
+    assert matrix.session_columns[1].width() >= 116
 
 
 def test_main_window_expanded_mode_uses_matrix_and_sessions() -> None:
@@ -216,9 +234,34 @@ def test_main_window_expanded_mode_uses_matrix_and_sessions() -> None:
     assert window.width() == 272
     assert window.height() <= 340
     assert not window.session_matrix.isHidden()
-    assert window.session_matrix.maximumHeight() <= COLUMN_HEIGHT + 20
+    assert window.session_matrix.maximumHeight() <= COLUMN_HEIGHT + 8
     assert len(window.session_matrix.session_columns) == 2
     assert window.status_bar.status_text == "待审批确认 · 2 会话"
+
+
+def test_main_window_expanded_restores_github_top_lamp_scale() -> None:
+    """Expanded top lamps should preserve the stronger recent GitHub sizing."""
+    window = FramelessMainWindow()
+
+    window.toggle_expanded()
+
+    assert EXPANDED_GLOBAL_HEIGHT == 88
+    assert window._expanded_status_stack.height() == 88
+    assert window.traffic_light.lamp_diameter == 30
+
+
+def test_main_window_expanded_keeps_lamps_above_secondary_status_text() -> None:
+    """Expanded top area should keep the lamps as the primary vertical focus."""
+    window = FramelessMainWindow()
+
+    window.toggle_expanded()
+
+    assert not window._expanded_status_stack.isHidden()
+    assert window.traffic_light.parent() is window._expanded_status_stack
+    assert window.status_bar.parent() is window._expanded_status_stack
+    assert window._expanded_status_layout.indexOf(window.traffic_light) < (
+        window._expanded_status_layout.indexOf(window.status_bar)
+    )
 
 
 def test_main_window_expanded_scale_resizes_mini_lamps() -> None:

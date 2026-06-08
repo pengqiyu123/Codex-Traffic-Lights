@@ -7,7 +7,7 @@ from dataclasses import replace
 from weakref import ReferenceType, ref
 
 from PyQt5.QtCore import QRectF, Qt, QVariantAnimation
-from PyQt5.QtGui import QCloseEvent, QColor, QFont, QFontMetrics, QPainter, QPen
+from PyQt5.QtGui import QCloseEvent, QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
 from PyQt5.QtWidgets import QWidget
 
 from codex_traffic_lights.animation.effects import OFF_EFFECT, STATUS_EFFECTS, LightEffectParams
@@ -17,15 +17,19 @@ from codex_traffic_lights.session_models import SessionStatus
 from codex_traffic_lights.widgets.traffic_light import LAMP_PALETTE, STATUS_COLORS, _paint_lamp
 
 COLUMN_WIDTH = 44
-COLUMN_HEIGHT = 56
-MINI_LAMP_DIAMETER = 10
+COLUMN_HEIGHT = 72
+MINI_LAMP_DIAMETER = 14
 MINI_LAMP_GAP = 4
 MIN_COLUMN_WIDTH = 36
-MAX_COLUMN_WIDTH = 76
+MAX_COLUMN_WIDTH = 240
 BASE_NAME_FONT_SIZE = 7
-BASE_NAME_TOP = 44
+BASE_NAME_TOP = 56
 BASE_NAME_HEIGHT = 12
-BASE_TOP_PADDING = 4
+BASE_TOP_PADDING = 6
+CARD_RADIUS = 6
+CARD_MARGIN = 0
+CARD_BACKGROUND_COLOR = "#121216"
+CARD_BORDER_COLOR = "#2A2A30"
 MIN_SCALE = 0.5
 MAX_SCALE = 2.0
 RETIRING_RED_EFFECT = LightEffectParams(
@@ -70,6 +74,21 @@ class SessionColumnWidget(QWidget):
     @property
     def has_status_dot(self) -> bool:
         """Return whether this compact column paints an extra status dot."""
+        return False
+
+    @property
+    def has_card_frame(self) -> bool:
+        """Return whether the column paints its own project card frame."""
+        return True
+
+    @property
+    def card_margin(self) -> int:
+        """Return the unscaled inset between the widget edge and card frame."""
+        return CARD_MARGIN
+
+    @property
+    def has_card_highlight_arc(self) -> bool:
+        """Return whether the card paints a decorative highlight arc."""
         return False
 
     @property
@@ -134,11 +153,14 @@ class SessionColumnWidget(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(Qt.NoPen)
+        self._paint_card(painter)
 
         diameter = self.mini_lamp_diameter
         gap = max(2, round(MINI_LAMP_GAP * self._scale))
         left = (self.width() - diameter) / 2
-        top = BASE_TOP_PADDING * self._scale
+        lamps_height = diameter * 3 + gap * 2
+        label_top = BASE_NAME_TOP * self._scale
+        top = max(BASE_TOP_PADDING * self._scale, (label_top - lamps_height) / 2)
         for index, lamp_name in enumerate(_LAMP_NAMES):
             y = top + index * (diameter + gap)
             rect = QRectF(left, y, diameter, diameter)
@@ -151,6 +173,22 @@ class SessionColumnWidget(QWidget):
             )
 
         self._paint_name(painter)
+
+    def _paint_card(self, painter: QPainter) -> None:
+        """Paint the project card backing for this session."""
+        margin = round(CARD_MARGIN * self._scale)
+        rect = QRectF(self.rect()).adjusted(margin, margin, -margin, -margin)
+        radius = max(4, round(CARD_RADIUS * self._scale))
+        path = QPainterPath()
+        path.addRoundedRect(rect, radius, radius)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(CARD_BACKGROUND_COLOR))
+        painter.drawPath(path)
+
+        painter.setBrush(Qt.NoBrush)
+        painter.setPen(QPen(QColor(CARD_BORDER_COLOR), 1))
+        painter.drawPath(path)
+        painter.setPen(Qt.NoPen)
 
     def _apply_status_effects(self, status: CodexStatus) -> None:
         """Apply animation effects for the session status."""
