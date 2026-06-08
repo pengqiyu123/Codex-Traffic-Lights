@@ -15,11 +15,21 @@ class FakeSignal:
 
     def __init__(self) -> None:
         """Create an empty fake signal."""
-        self.connected_slot: Any | None = None
+        self.connected_slots: list[Any] = []
 
     def connect(self, slot: Any) -> None:
         """Record the slot connected by application startup."""
-        self.connected_slot = slot
+        self.connected_slots.append(slot)
+
+    def emit(self, *args: object) -> None:
+        """Invoke all recorded slots."""
+        for slot in self.connected_slots:
+            slot(*args)
+
+    @property
+    def connected_slot(self) -> Any | None:
+        """Return the latest connected slot for compatibility with older tests."""
+        return self.connected_slots[-1] if self.connected_slots else None
 
 
 class FakeAboutToQuit:
@@ -78,6 +88,9 @@ def test_main_wires_config_monitor_window_tray_and_exec(
         def load(self) -> AppConfig:
             created["config_loaded"] = True
             return loaded_config
+
+        def save(self, config: AppConfig) -> None:
+            created["saved_config"] = config
 
     class FakeMonitor:
         def __init__(self, config: AppConfig) -> None:
@@ -147,10 +160,28 @@ def test_main_wires_config_monitor_window_tray_and_exec(
             self.shown = False
             self.statuses: list[CodexStatus] = []
             self.sessions: list[object] | None = None
+            self.side_buttons = type(
+                "FakeSideButtons",
+                (),
+                {
+                    "power_toggled": FakeSignal(),
+                    "notification_button": object(),
+                    "sound_button": object(),
+                },
+            )()
             created["window"] = self
 
         def show(self) -> None:
             self.shown = True
+
+        def hide(self) -> None:
+            self.shown = False
+
+        def raise_(self) -> None:
+            created["window_raised"] = True
+
+        def activateWindow(self) -> None:  # noqa: N802
+            created["window_activated"] = True
 
         def set_status(self, status: CodexStatus) -> None:
             self.statuses.append(status)
@@ -162,10 +193,48 @@ def test_main_wires_config_monitor_window_tray_and_exec(
         def __init__(self, window: FakeWindow) -> None:
             self.window = window
             self.shown = False
+            self.messages: list[tuple[str, str]] = []
             created["tray"] = self
 
         def show(self) -> None:
             self.shown = True
+
+        def show_message(self, title: str, text: str) -> None:
+            self.messages.append((title, text))
+
+    class FakeSoundPlayer:
+        def __init__(self) -> None:
+            created["sound_player"] = self
+
+    class FakeNotificationController:
+        def __init__(self, tray: FakeTray, sound_player: FakeSoundPlayer) -> None:
+            self.tray = tray
+            self.sound_player = sound_player
+            self.configs: list[AppConfig] = []
+            self.sessions: list[list[object]] = []
+            created["notification_controller"] = self
+
+        def set_config(self, config: AppConfig) -> None:
+            self.configs.append(config)
+
+        def set_sessions(self, sessions: list[object]) -> None:
+            self.sessions.append(sessions)
+
+    class FakeSettingsController:
+        def __init__(
+            self,
+            config: AppConfig,
+            config_manager: FakeConfigManager,
+            notification_button: object,
+            sound_button: object,
+            on_config_changed: Any,
+        ) -> None:
+            self.config = config
+            self.config_manager = config_manager
+            self.notification_button = notification_button
+            self.sound_button = sound_button
+            self.on_config_changed = on_config_changed
+            created["settings_controller"] = self
 
     monkeypatch.setattr(entry, "QApplication", FakeApplication)
     monkeypatch.setattr(entry, "ConfigManager", FakeConfigManager)
@@ -174,6 +243,9 @@ def test_main_wires_config_monitor_window_tray_and_exec(
     monkeypatch.setattr(entry, "VSCodeIpcConnector", FakeIpcConnector)
     monkeypatch.setattr(entry, "FramelessMainWindow", FakeWindow)
     monkeypatch.setattr(entry, "TrayIcon", FakeTray)
+    monkeypatch.setattr(entry, "SoundPlayer", FakeSoundPlayer)
+    monkeypatch.setattr(entry, "NotificationController", FakeNotificationController)
+    monkeypatch.setattr(entry, "SettingsController", FakeSettingsController)
     monkeypatch.setattr(entry.sys, "argv", ["codex-traffic-lights"])
 
     exit_code = entry.main()
@@ -184,6 +256,9 @@ def test_main_wires_config_monitor_window_tray_and_exec(
     ipc_connector = created["ipc_connector"]
     window = created["window"]
     tray = created["tray"]
+    sound_player = created["sound_player"]
+    notification_controller = created["notification_controller"]
+    settings_controller = created["settings_controller"]
     assert exit_code == 23
     assert app.application_name == "Codex Traffic Lights"
     assert app.organization_name == "Codex Traffic Lights"
@@ -205,24 +280,38 @@ def test_main_wires_config_monitor_window_tray_and_exec(
     assert window.shown is True
     assert tray.window is window
     assert tray.shown is True
+    assert notification_controller.tray is tray
+    assert notification_controller.sound_player is sound_player
+    assert notification_controller.configs == [loaded_config]
+    assert settings_controller.config is loaded_config
+    assert settings_controller.notification_button is window.side_buttons.notification_button
+    assert settings_controller.sound_button is window.side_buttons.sound_button
 
-    monitor.status_changed.connected_slot(CodexStatus.WAITING_APPROVAL)
+    monitor.status_changed.emit(CodexStatus.WAITING_APPROVAL)
     assert window.statuses == [CodexStatus.WAITING_APPROVAL]
-    monitor.sessions_changed.connected_slot([])
+    monitor.sessions_changed.emit([])
     assert window.sessions == []
+    assert notification_controller.sessions == [[]]
 
-    ipc_connector.status_changed.connected_slot(CodexStatus.WORKING)
+    ipc_connector.status_changed.emit(CodexStatus.WORKING)
     assert window.statuses == [CodexStatus.WAITING_APPROVAL, CodexStatus.WORKING]
-    ipc_connector.sessions_changed.connected_slot(["ipc-session"])
+    ipc_connector.sessions_changed.emit(["ipc-session"])
     assert window.sessions == ["ipc-session"]
+    assert notification_controller.sessions == [[], ["ipc-session"]]
 
-    hook_watcher.status_changed.connected_slot(CodexStatus.WORKING)
+    hook_watcher.status_changed.emit(CodexStatus.WORKING)
     assert monitor.registry_updates == 1
 
+    settings_controller.on_config_changed(AppConfig(notification_enabled=False))
+    assert notification_controller.configs[-1].notification_enabled is False
 
-def test_entrypoint_file_stays_small() -> None:
-    """Entry file should stay within the Task 6 size budget."""
+
+def test_entrypoint_keeps_feature_logic_in_dedicated_modules() -> None:
+    """Entry file should compose controllers instead of owning feature logic."""
     entry = import_entry_module()
     entry_path = Path(entry.__file__)
+    source = entry_path.read_text(encoding="utf-8")
 
-    assert len(entry_path.read_text(encoding="utf-8").splitlines()) <= 80
+    assert "compute_alerts" not in source
+    assert "MessageBeep" not in source
+    assert ".save(" not in source

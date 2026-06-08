@@ -131,6 +131,7 @@ class SideButtonsWidget(QWidget):
         self._layout.setSpacing(BASE_SPACING)
 
         self.notification_button = self._make_button("bell", "notification_button", True)
+        self.notification_button.hide()
         self.zoom_out_button = self._make_button("minus", "zoom_out_button")
         self.zoom_in_button = self._make_button("plus", "zoom_in_button")
         self.settings_button = self._make_button("gear", "settings_button")

@@ -8,8 +8,13 @@ from PyQt5.QtWidgets import QApplication
 from codex_traffic_lights.config import ConfigManager
 from codex_traffic_lights.hook_bridge import HookFileWatcher
 from codex_traffic_lights.hook_installer import HookInstaller
+from codex_traffic_lights.models import AppConfig
+from codex_traffic_lights.notification_controller import NotificationController
 from codex_traffic_lights.process_monitor import ProcessMonitor
+from codex_traffic_lights.settings_controller import SettingsController
+from codex_traffic_lights.sound_player import SoundPlayer
 from codex_traffic_lights.tray import TrayIcon
+from codex_traffic_lights.tray import connect_power_button as _connect_power_button
 from codex_traffic_lights.vscode_ipc import VSCodeIpcConnector
 from codex_traffic_lights.widgets.main_window import FramelessMainWindow
 
@@ -20,17 +25,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     app.setApplicationName("Codex Traffic Lights")
     app.setOrganizationName("Codex Traffic Lights")
 
-    config = ConfigManager().load()
+    config_manager = ConfigManager()
+    config = config_manager.load()
     _install_hooks(HookInstaller())
     monitor = ProcessMonitor(config)
     hook_watcher = HookFileWatcher(config, monitor.registry)
     ipc_connector = VSCodeIpcConnector(config, monitor.registry)
     window = FramelessMainWindow()
     tray = TrayIcon(window)
+    alerts, _settings = _connect_alerts(window, config, config_manager, tray)
 
-    for status_source in (monitor, ipc_connector):
-        status_source.status_changed.connect(window.set_status)
-        status_source.sessions_changed.connect(window.set_sessions)
+    _connect_status_sources((monitor, ipc_connector), window, alerts)
     hook_watcher.status_changed.connect(lambda _status: monitor.apply_registry_update())
     _connect_power_button(window, tray)
     app.aboutToQuit.connect(lambda: _stop_workers(monitor, hook_watcher, ipc_connector))
@@ -52,24 +57,37 @@ def _install_hooks(installer: HookInstaller) -> None:
         print(f"[Codex Traffic Lights] Hook install failed (non-fatal): {exc}")
 
 
-def _connect_power_button(window: FramelessMainWindow, tray: TrayIcon) -> None:
-    """Wire the power button to minimize to tray and restore the window."""
-    power_toggled = getattr(getattr(window, "side_buttons", None), "power_toggled", None)
-    if power_toggled is None:
-        return
+def _connect_status_sources(
+    sources: Sequence[ProcessMonitor | VSCodeIpcConnector],
+    window: FramelessMainWindow,
+    alerts: NotificationController,
+) -> None:
+    """Wire status sources to the window and alert controller."""
+    for source in sources:
+        source.status_changed.connect(window.set_status)
+        source.sessions_changed.connect(window.set_sessions)
+        source.sessions_changed.connect(alerts.set_sessions)
 
-    def _on_power_toggled(checked: bool) -> None:
-        if checked:
-            window.hide()
-            tray.show_message("Codex Traffic Lights", "已最小化到托盘，双击图标恢复")
-        else:
-            window.show()
-            window.raise_()
-            window.activateWindow()
 
-    power_toggled.connect(_on_power_toggled)
+def _connect_alerts(
+    window: FramelessMainWindow,
+    config: AppConfig,
+    config_manager: ConfigManager,
+    tray: TrayIcon,
+) -> tuple[NotificationController, SettingsController]:
+    """Wire notification, sound, and persistent setting controllers."""
+    alerts = NotificationController(tray, SoundPlayer())
+    alerts.set_config(config)
+    side = window.side_buttons
+    buttons = side.notification_button, side.sound_button
+    settings = SettingsController(config, config_manager, *buttons, alerts.set_config)
+    return alerts, settings
 
-def _stop_workers(*workers: object) -> None:
+
+def _stop_workers(
+    *workers: ProcessMonitor | HookFileWatcher | VSCodeIpcConnector,
+) -> None:
+    """Request worker shutdown and wait briefly for each thread."""
     for worker in workers:
         worker.requestInterruption()
     for worker in workers:

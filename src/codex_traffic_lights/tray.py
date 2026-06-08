@@ -83,3 +83,21 @@ def _load_icon() -> QIcon:
     paint_codex_mark(painter, QRectF(2, 2, 28, 28), with_shadow=False)
     painter.end()
     return QIcon(pixmap)
+
+
+def connect_power_button(window: QWidget, tray: TrayIcon) -> None:
+    """Wire the power button to minimize to tray and restore the window."""
+    power_toggled = getattr(getattr(window, "side_buttons", None), "power_toggled", None)
+    if power_toggled is None:
+        return
+
+    def _on_power_toggled(checked: bool) -> None:
+        if checked:
+            window.hide()
+            tray.show_message("Codex Traffic Lights", "已最小化到托盘，双击图标恢复")
+            return
+        window.show()
+        window.raise_()
+        window.activateWindow()
+
+    power_toggled.connect(_on_power_toggled)

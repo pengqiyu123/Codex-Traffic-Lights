@@ -78,6 +78,13 @@ def test_side_buttons_render_without_error() -> None:
     assert pixmap.size() == QSize(32, 220)
 
 
+def test_notification_button_is_hidden_while_feature_is_disabled() -> None:
+    """Notification UI should stay hidden until the popup feature returns."""
+    widget = SideButtonsWidget()
+
+    assert widget.notification_button.isHidden()
+
+
 def test_side_buttons_scale_buttons_and_icon_area() -> None:
     """Zoom should resize side controls and their painted icon area."""
     widget = SideButtonsWidget()
