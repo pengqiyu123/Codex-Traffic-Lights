@@ -115,6 +115,7 @@ class FramelessMainWindow(QWidget):
         self._sessions: list[SessionStatus] = []
         self.expanded_content_mode = "sessions"
         self._hover_expanded_from_dock = False
+        self._pre_expand_snap_edge: str | None = None
         self._dock_timer = QTimer(self)
         self._dock_timer.setSingleShot(True)
         self._dock_timer.timeout.connect(self._dock_now)
@@ -260,13 +261,35 @@ class FramelessMainWindow(QWidget):
         self.traffic_light.setMaximumHeight(16777215)
         self.status_bar.set_compact_height(False)
         self._apply_content_scale()
+        # Re-snap to the same edge we were at before expanding.
+        snap_edge = self._pre_expand_snap_edge
+        self._pre_expand_snap_edge = None
+        if snap_edge is not None:
+            self._snap_edge = snap_edge
         self._apply_size(animated=True)
+        if snap_edge is not None:
+            self._edge_state = EdgeState.SNAPPED
+            self._snap_edge = snap_edge
+            self._dock_timer.start(DOCK_AUTO_DELAY_MS)
 
     def _set_expanded_mode(self, mode: str) -> None:
         """Open Expanded mode and show the requested content panel."""
-        if self._edge_state is EdgeState.DOCKED:
-            self._expand_from_dock()
-        self._clear_edge_state()
+        # Preserve snap edge for edge-aligned positioning, then reset all edge
+        # state inline so the dock→compact animation does not fight the
+        # compact→expanded animation that follows.
+        snap_edge = self._snap_edge
+        self._pre_expand_snap_edge = snap_edge
+        self._dock_timer.stop()
+        self._collapse_timer.stop()
+        self._edge_state = EdgeState.FREE
+        self._snap_edge = None
+        self._hover_expanded_from_dock = False
+        self._body.set_corner_radius(COMPACT_BODY_RADIUS)
+        self.traffic_light.set_docked_mode(False)
+        self.header.show()
+        self.status_bar.show()
+        self.side_buttons.show()
+
         was_expanded = self.is_expanded
         self.expanded_content_mode = mode
         self.is_expanded = True
@@ -281,7 +304,11 @@ class FramelessMainWindow(QWidget):
         self.traffic_light.set_orientation("horizontal")
         self.traffic_light.set_lamp_diameter(round(30 * self.window_scale))
         self._apply_content_scale()
+        # Temporarily restore snap edge so _apply_size positions the expanded
+        # window flush with the screen edge instead of expanding in-place.
+        self._snap_edge = snap_edge
         self._apply_size(animated=not was_expanded)
+        self._snap_edge = None
 
     def _show_expanded_content(self, mode: str) -> None:
         """Switch the visible Expanded content panel."""
@@ -301,13 +328,27 @@ class FramelessMainWindow(QWidget):
 
     def mouseDoubleClickEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         """Toggle expanded mode when the lamp area is double-clicked."""
+        if event.button() == Qt.LeftButton and self._is_lamp_hit(event.pos()):
+            self.toggle_expanded()
+            event.accept()
+            return
         if self._edge_state is EdgeState.SNAPPED:
             self._dock_now()
             event.accept()
-            return
-        if event.button() == Qt.LeftButton and self.traffic_light.geometry().contains(event.pos()):
-            self.toggle_expanded()
-            event.accept()
+
+    def _is_lamp_hit(self, pos: QPoint) -> bool:
+        """Return whether a local point should use the lamp double-click action."""
+        if self._edge_state is EdgeState.DOCKED:
+            return self.rect().contains(pos)
+        body_width = self._body.width()
+        if body_width <= 0:
+            body_width = round(
+                (EXPANDED_BODY_WIDTH if self.is_expanded else BASE_BODY_WIDTH)
+                * self.window_scale
+            )
+        if not QRect(0, 0, body_width, self.height()).contains(pos):
+            return False
+        return self.traffic_light.geometry().contains(pos)
 
     def _apply_size(self, animated: bool) -> None:
         """Apply compact or expanded dimensions for the current scale."""

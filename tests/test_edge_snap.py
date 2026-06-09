@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from PyQt5.QtCore import QRect
+from PyQt5.QtCore import QEvent, QPoint, QRect, Qt
+from PyQt5.QtGui import QMouseEvent
 from PyQt5.QtWidgets import QApplication
 
 from codex_traffic_lights.models import EdgeState
@@ -147,8 +148,8 @@ def test_visible_right_edge_hover_expand_targets_aligned_compact_window(
     assert target.width() == 104
 
 
-def test_double_click_skips_dock_delay(qapp: QApplication) -> None:
-    """Double-clicking a snapped compact window should dock immediately."""
+def test_dock_now_skips_dock_delay(qapp: QApplication) -> None:
+    """The dock action should still allow skipping the auto-dock delay."""
     window = _window_on_screen(QRect(0, 0, 500, 400))
     window.resize(104, 220)
     window.move(0, 40)
@@ -157,6 +158,59 @@ def test_double_click_skips_dock_delay(qapp: QApplication) -> None:
     window._dock_now()
 
     assert window.edge_state is EdgeState.DOCKED
+    assert not window._dock_timer.isActive()
+
+
+def test_double_click_snapped_lamp_opens_sessions_without_docking(
+    qapp: QApplication,
+) -> None:
+    """Double-clicking the lamp while snapped should open Expanded sessions."""
+    window = _window_on_screen(QRect(0, 0, 500, 400))
+    window.resize(104, 220)
+    window.move(0, 40)
+    window._apply_edge_snap()
+
+    _double_click(window, _lamp_point(window))
+
+    assert window.is_expanded is True
+    assert window.expanded_content_mode == "sessions"
+    assert window.edge_state is EdgeState.FREE
+    assert window.snap_edge is None
+    assert not window._dock_timer.isActive()
+    assert not window._collapse_timer.isActive()
+
+
+def test_double_click_hover_expanded_lamp_cancels_pending_dock(
+    qapp: QApplication,
+) -> None:
+    """Double-clicking a hover-expanded lamp should cancel dock collapse."""
+    window = _docked_window()
+    window._expand_from_dock()
+    window._schedule_dock_collapse()
+    assert window._collapse_timer.isActive()
+
+    _double_click(window, _lamp_point(window))
+    window._collapse_timer.timeout.emit()
+
+    assert window.is_expanded is True
+    assert window.edge_state is EdgeState.FREE
+    assert not window._collapse_timer.isActive()
+    assert window.traffic_light.is_docked_mode is False
+
+
+def test_double_click_snapped_body_outside_lamp_still_docks(
+    qapp: QApplication,
+) -> None:
+    """Double-clicking snapped chrome outside the lamp should still dock now."""
+    window = _window_on_screen(QRect(0, 0, 500, 400))
+    window.resize(104, 220)
+    window.move(0, 40)
+    window._apply_edge_snap()
+
+    _double_click(window, QPoint(window.width() - 5, window.height() - 5))
+
+    assert window.edge_state is EdgeState.DOCKED
+    assert window.is_expanded is False
     assert not window._dock_timer.isActive()
 
 
@@ -255,3 +309,19 @@ def _docked_window() -> FramelessMainWindow:
     window._apply_edge_snap()
     window._dock_now()
     return window
+
+
+def _lamp_point(window: FramelessMainWindow) -> QPoint:
+    geometry = window.traffic_light.geometry()
+    return geometry.topLeft() + QPoint(5, 5)
+
+
+def _double_click(window: FramelessMainWindow, pos: QPoint) -> None:
+    event = QMouseEvent(
+        QEvent.MouseButtonDblClick,
+        pos,
+        Qt.LeftButton,
+        Qt.LeftButton,
+        Qt.NoModifier,
+    )
+    window.mouseDoubleClickEvent(event)
