@@ -353,17 +353,18 @@ class FramelessMainWindow(QWidget):
     def _apply_size(self, animated: bool) -> None:
         """Apply compact or expanded dimensions for the current scale."""
         if self._edge_state is EdgeState.DOCKED:
-            self._body.setFixedWidth(DOCKED_WIDTH)
+            width, height = self._scaled_docked_size()
+            self._body.setFixedWidth(width)
             target = QRect(
-                self._aligned_x_for_width(DOCKED_WIDTH),
-                self._clamped_y_for_height(DOCKED_HEIGHT),
-                DOCKED_WIDTH,
-                DOCKED_HEIGHT,
+                self._aligned_x_for_width(width),
+                self._clamped_y_for_height(height),
+                width,
+                height,
             )
             if animated and self.isVisible():
                 self._animate_geometry(target, DOCK_CONTRACT_MS)
             else:
-                self.resize(DOCKED_WIDTH, DOCKED_HEIGHT)
+                self.resize(width, height)
                 self.move(target.topLeft())
             return
         body_width = EXPANDED_BODY_WIDTH if self.is_expanded else BASE_BODY_WIDTH
@@ -387,10 +388,12 @@ class FramelessMainWindow(QWidget):
         self.session_matrix.set_scale(self.window_scale)
         self.sound_settings_panel.set_scale(self.window_scale)
         if self._edge_state is EdgeState.DOCKED:
+            width, height = self._scaled_docked_size()
             self.traffic_light.set_docked_mode(True)
-            self.traffic_light.setMinimumSize(DOCKED_WIDTH, DOCKED_HEIGHT)
-            self.traffic_light.setFixedSize(DOCKED_WIDTH, DOCKED_HEIGHT)
-            self._body.setFixedWidth(DOCKED_WIDTH)
+            self.traffic_light.set_lamp_diameter(self._scaled_docked_lamp_diameter())
+            self.traffic_light.setMinimumSize(width, height)
+            self.traffic_light.setFixedSize(width, height)
+            self._body.setFixedWidth(width)
             return
         self.traffic_light.set_docked_mode(False)
         if self.is_expanded:
@@ -523,7 +526,7 @@ class FramelessMainWindow(QWidget):
         self._divider.hide()
         self.session_matrix.hide()
         self.sound_settings_panel.hide()
-        self._body.set_corner_radius(DOCKED_BODY_RADIUS)
+        self._body.set_corner_radius(self._scaled_docked_body_radius())
         self.traffic_light.set_docked_mode(True)
         self._apply_content_scale()
         self._apply_size(animated=True)
@@ -543,6 +546,21 @@ class FramelessMainWindow(QWidget):
         self._apply_content_scale()
         self._apply_size(animated=animated)
         self._align_to_snap_edge(DOCK_EXPAND_MS if animated else 0)
+
+    def _scaled_docked_size(self) -> tuple[int, int]:
+        """Return docked mini indicator size for the current window scale."""
+        return (
+            max(1, round(DOCKED_WIDTH * self.window_scale)),
+            max(1, round(DOCKED_HEIGHT * self.window_scale)),
+        )
+
+    def _scaled_docked_lamp_diameter(self) -> int:
+        """Return docked lamp diameter for the current window scale."""
+        return max(1, round(DOCKED_LAMP_DIAMETER * self.window_scale))
+
+    def _scaled_docked_body_radius(self) -> int:
+        """Return docked panel radius for the current window scale."""
+        return max(1, round(DOCKED_BODY_RADIUS * self.window_scale))
 
     def _schedule_dock_collapse(self) -> None:
         """Collapse a hover-expanded snapped window after a short delay."""

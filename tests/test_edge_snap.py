@@ -98,6 +98,69 @@ def test_auto_dock_after_timeout(qapp: QApplication) -> None:
     assert window.side_buttons.isHidden()
 
 
+def test_docked_size_scales_with_window_scale(qapp: QApplication) -> None:
+    """Docked mini indicator should honor the current window scale."""
+    window = _window_on_screen(QRect(0, 0, 500, 400))
+    window.set_window_scale(1.5)
+    window.move(0, 40)
+    window._apply_edge_snap()
+
+    window._dock_now()
+
+    assert window.width() == round(DOCKED_WIDTH * 1.5)
+    assert window.height() == round(DOCKED_HEIGHT * 1.5)
+    assert window.traffic_light.width() == round(DOCKED_WIDTH * 1.5)
+    assert window.traffic_light.height() == round(DOCKED_HEIGHT * 1.5)
+    assert window.traffic_light.lamp_diameter == round(DOCKED_LAMP_DIAMETER * 1.5)
+
+
+def test_docked_size_scales_down_to_half(qapp: QApplication) -> None:
+    """Half-scale docked mode should stay visible while becoming smaller."""
+    window = _window_on_screen(QRect(0, 0, 500, 400))
+    window.set_window_scale(0.5)
+    window.move(0, 40)
+    window._apply_edge_snap()
+
+    window._dock_now()
+
+    assert window.width() == round(DOCKED_WIDTH * 0.5)
+    assert window.height() == round(DOCKED_HEIGHT * 0.5)
+    assert window.traffic_light.lamp_diameter == round(DOCKED_LAMP_DIAMETER * 0.5)
+
+
+def test_docked_size_scales_up_to_double(qapp: QApplication) -> None:
+    """Double-scale docked mode should grow with the main window scale."""
+    window = _window_on_screen(QRect(0, 0, 500, 400))
+    window.set_window_scale(2.0)
+    window.move(0, 40)
+    window._apply_edge_snap()
+
+    window._dock_now()
+
+    assert window.width() == round(DOCKED_WIDTH * 2.0)
+    assert window.height() == round(DOCKED_HEIGHT * 2.0)
+    assert window.traffic_light.lamp_diameter == round(DOCKED_LAMP_DIAMETER * 2.0)
+
+
+def test_hover_expand_from_scaled_docked_restores_scaled_compact(
+    qapp: QApplication,
+) -> None:
+    """Hover expansion should restore the compact shape at the same scale."""
+    window = _window_on_screen(QRect(0, 0, 500, 400))
+    window.set_window_scale(1.5)
+    window.move(0, 40)
+    window._apply_edge_snap()
+    window._dock_now()
+
+    window._expand_from_dock(animated=False)
+
+    assert window.edge_state is EdgeState.SNAPPED
+    assert window.width() == round(104 * 1.5)
+    assert window.height() == round(220 * 1.5)
+    assert window.traffic_light.lamp_diameter == round(36 * 1.5)
+    assert window.traffic_light.is_docked_mode is False
+
+
 def test_docking_on_right_edge_keeps_indicator_aligned(qapp: QApplication) -> None:
     """Right-edge docking should calculate the final x from the docked width."""
     window = _window_on_screen(QRect(0, 0, 500, 400))
@@ -287,13 +350,15 @@ def test_snap_triggers_when_partially_off_screen_right(qapp: QApplication) -> No
 
 
 def test_docked_lamp_renders_simplified(qapp: QApplication) -> None:
-    """The traffic-light widget should expose the simplified docked renderer mode."""
+    """Docked mode should not override externally scaled lamp diameter."""
     widget = TrafficLightWidget()
+    widget.set_lamp_diameter(15)
 
     widget.set_docked_mode(True)
 
     assert widget.is_docked_mode is True
-    assert widget.lamp_diameter == DOCKED_LAMP_DIAMETER
+    assert widget.orientation == "horizontal"
+    assert widget.lamp_diameter == 15
 
 
 def _window_on_screen(geometry: QRect) -> FramelessMainWindow:

@@ -2,27 +2,40 @@
 
 from __future__ import annotations
 
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 RESOURCE_ADD_DATA = "src/codex_traffic_lights/resources;codex_traffic_lights/resources"
-SOUNDS_ADD_DATA = "sounds;sounds"
 ICON = "src/codex_traffic_lights/resources/icons/app.ico"
 ENTRYPOINT = "src/codex_traffic_lights/__main__.py"
+APP_NAME = "Codex Traffic Lights Portable"
+DIST_DIR = Path("dist") / APP_NAME
+SOUND_DIR = Path("sounds")
+USER_GUIDE = Path("docs") / "Portable-User-Guide.md"
+DEFAULT_SOUND_FILES = (
+    "任务完成.mp3",
+    "待审批确认.mp3",
+    "计划模式输入.mp3",
+    "运行异常.mp3",
+)
 
 
 def build_command() -> list[str]:
-    """Return the PyInstaller command for the Windows desktop executable."""
+    """Return the PyInstaller command for the Windows portable folder."""
     return [
-        "pyinstaller",
-        "--onefile",
+        sys.executable,
+        "-m",
+        "PyInstaller",
+        "--noconfirm",
+        "--clean",
+        "--onedir",
         "--windowed",
         "--name",
-        "codex-traffic-lights",
+        APP_NAME,
         "--add-data",
         RESOURCE_ADD_DATA,
-        "--add-data",
-        SOUNDS_ADD_DATA,
         "--icon",
         ICON,
         ENTRYPOINT,
@@ -30,10 +43,21 @@ def build_command() -> list[str]:
 
 
 def main() -> int:
-    """Run PyInstaller and return its process exit code."""
+    """Run PyInstaller, prepare the portable folder, and return exit code."""
     _validate_resources()
     completed = subprocess.run(build_command(), check=False)
+    if completed.returncode == 0:
+        prepare_portable_folder(DIST_DIR)
     return completed.returncode
+
+
+def prepare_portable_folder(dist_dir: Path) -> None:
+    """Copy user-facing portable assets beside the executable."""
+    sounds_target = dist_dir / "sounds"
+    sounds_target.mkdir(parents=True, exist_ok=True)
+    for filename in DEFAULT_SOUND_FILES:
+        shutil.copy2(SOUND_DIR / filename, sounds_target / filename)
+    shutil.copy2(USER_GUIDE, dist_dir / "使用说明.md")
 
 
 def _validate_resources() -> None:
@@ -42,9 +66,11 @@ def _validate_resources() -> None:
         path
         for path in [
             Path("src/codex_traffic_lights/resources"),
-            Path("sounds"),
+            SOUND_DIR,
             Path(ICON),
             Path(ENTRYPOINT),
+            USER_GUIDE,
+            *(SOUND_DIR / filename for filename in DEFAULT_SOUND_FILES),
         ]
         if not path.exists()
     ]

@@ -9,7 +9,7 @@
 1. 实时检测 Codex CLI 可观测状态并映射到桌面灯效
 2. 提供美观的竖版黑底三灯视觉设计
 3. 支持拖拽贴边、系统托盘、快捷按钮等桌面交互
-4. PyInstaller 打包为单 exe，零配置双击即用
+4. PyInstaller 打包为便携文件夹，零配置双击即用
 
 ## Codex 真实状态模型
 
@@ -25,17 +25,17 @@
 
 | # | 状态名 | 英文 Key | 红灯 | 黄灯 | 绿灯 | 底部文字 | 来源 |
 |---|--------|----------|------|------|------|---------|------|
-| 1 | 离线休眠 | `OFFLINE` | 常亮 | 灭 | 灭 | 待机离线 | app-server 未连接 / 无 Codex 进程 |
+| 1 | 离线休眠 | `OFFLINE` | 常亮 | 灭 | 灭 | 待机离线 | VSCode Codex IPC 未连接 / 无 Codex 会话 |
 | 2 | 正在工作 | `WORKING` | 灭 | 慢呼吸(3s) | 灭 | 正在工作 | `ThreadStatus.active` / `TurnStatus.inProgress` |
 | 3 | 待审批确认 | `WAITING_APPROVAL` | 灭 | 慢闪 | 慢闪 | 待审批确认 | `activeFlags` 包含 `waitingOnApproval` |
-| 4 | 待用户输入 | `WAITING_USER_INPUT` | 灭 | 间歇闪(0.5s) | 灭 | 待用户输入 | `activeFlags` 包含 `waitingOnUserInput` |
+| 4 | 待用户输入 | `WAITING_USER_INPUT` | 灭 | 间歇闪(0.7s) | 灭 | 待用户输入 | `activeFlags` 包含 `waitingOnUserInput` |
 | 5 | 空闲就绪 | `IDLE` | 灭 | 灭 | 常亮(无光晕) | 空闲待命 | `ThreadStatus.idle` |
 | 6 | 运行异常 | `ERROR` | 快闪 | 快闪 | 灭 | 运行异常 | `ThreadStatus.systemError` / `TurnStatus.failed` / 进程异常退出 |
 
 **灯效参数定义**：
 - **常亮**：稳定发光，无动画
 - **慢呼吸**：亮度在 30%-100% 间正弦波变化，3 秒完整周期，细黄光环
-- **间歇闪**：0.5s 亮(微弱浅光晕) → 0.5s 灭，循环
+- **间歇闪**：快速亮起 → 峰值保持 → 熄灭 → 暗态保持，0.7 秒周期
 - **慢闪**：亮度在 20%-80% 间交替，2 秒周期
 - **快闪**：亮度在 20%-100% 间交替，0.3 秒周期
 
@@ -47,7 +47,7 @@
 
 | Codex 事件/字段 | 产品状态 |
 |----------|---------|
-| app-server 不可连接，且无 Codex 进程 | `OFFLINE` |
+| VSCode Codex IPC 不可连接，且无 Codex 会话 | `OFFLINE` |
 | `ThreadStatus.type == "idle"` | `IDLE` |
 | `ThreadStatus.type == "active"` 且 `activeFlags` 为空 | `WORKING` |
 | `TurnStatus == "inProgress"` | `WORKING` |
@@ -80,10 +80,10 @@
 ### 右侧按钮（从上→下）
 | 位置 | 图标 | 功能 |
 |------|------|------|
-| 1 | 🔔 铃铛 | 审批弹窗/任务完成通知开关 |
+| 1 | 展开 | 打开/关闭 Expanded 会话面板 |
 | 2 | ─ 缩小 | 缩小组件尺寸 |
 | 3 | ＋ 放大 | 放大组件尺寸 |
-| 4 | ⋮ 三点 | 设置面板（呼吸速度、灯光配色） |
+| 4 | 齿轮 | 打开/关闭声音设置 |
 | 5 | ⏻ 电源 | 启动/关闭 Codex 后台进程 |
 | 6 | 🔇 静音 | 状态切换提示音开关 |
 
@@ -106,10 +106,10 @@
 
 1. **置顶悬浮**：`Qt.WindowStaysOnTopHint` 永远在最上层
 2. **拖拽移动**：按住组件主体区域自由拖动
-3. **贴边隐藏**：靠近屏幕左右边缘时自动半隐藏缩进，鼠标移入自动滑出
+3. **贴边停靠**：靠近屏幕左右边缘时吸附，静置后收缩为 52×24 迷你灯条，鼠标移入临时展开
 4. **缩放**：通过 ± 按钮调整组件整体大小(50%-200%)
 5. **系统托盘**：最小化到托盘，右键菜单（显示/隐藏/退出）
-6. **设置面板**：自定义呼吸速度、灯光配色
+6. **设置面板**：选择/试听 4 类本地声音提醒
 7. **开机自启**：写入注册表启动项
 
 ## 技术栈
@@ -121,7 +121,7 @@
 | 进程检测 | psutil |
 | 动画 | QPropertyAnimation |
 | 配置 | JSON 文件 |
-| 打包 | PyInstaller (--onefile --windowed) |
+| 打包 | PyInstaller (--onedir --windowed) 便携文件夹 |
 | 测试 | pytest + pytest-qt + pytest-cov |
 | Lint | ruff |
 | 类型检查 | mypy (strict) |

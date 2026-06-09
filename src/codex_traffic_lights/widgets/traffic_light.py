@@ -91,7 +91,6 @@ class TrafficLightWidget(QWidget):
         self._docked_mode = docked
         if docked:
             self._orientation = "horizontal"
-            self._lamp_diameter = 10
         self.update()
 
     @property
