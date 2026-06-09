@@ -5,7 +5,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-ADD_DATA = "src/codex_traffic_lights/resources;codex_traffic_lights/resources"
+RESOURCE_ADD_DATA = "src/codex_traffic_lights/resources;codex_traffic_lights/resources"
+SOUNDS_ADD_DATA = "sounds;sounds"
 ICON = "src/codex_traffic_lights/resources/icons/app.ico"
 ENTRYPOINT = "src/codex_traffic_lights/__main__.py"
 
@@ -19,7 +20,9 @@ def build_command() -> list[str]:
         "--name",
         "codex-traffic-lights",
         "--add-data",
-        ADD_DATA,
+        RESOURCE_ADD_DATA,
+        "--add-data",
+        SOUNDS_ADD_DATA,
         "--icon",
         ICON,
         ENTRYPOINT,
@@ -39,6 +42,7 @@ def _validate_resources() -> None:
         path
         for path in [
             Path("src/codex_traffic_lights/resources"),
+            Path("sounds"),
             Path(ICON),
             Path(ENTRYPOINT),
         ]

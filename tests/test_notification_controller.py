@@ -23,6 +23,10 @@ class FakeSoundPlayer:
 
     def __init__(self) -> None:
         self.played: list[AlertKind] = []
+        self.configs: list[AppConfig] = []
+
+    def set_config(self, config: AppConfig) -> None:
+        self.configs.append(config)
 
     def play(self, kind: AlertKind) -> None:
         self.played.append(kind)

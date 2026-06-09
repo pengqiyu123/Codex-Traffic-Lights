@@ -6,7 +6,8 @@ from pathlib import Path
 from typing import Any
 
 from codex_traffic_lights.notification_policy import AlertKind
-from codex_traffic_lights.sound_player import SOUND_FILE_BY_KIND, SoundPlayer
+from codex_traffic_lights.sound_player import SoundPlayer
+from codex_traffic_lights.sound_settings import SOUND_FILE_BY_KIND
 
 
 def test_sound_player_uses_local_mp3_assets_for_all_alerts() -> None:
@@ -23,8 +24,8 @@ def test_sound_player_uses_local_mp3_assets_for_all_alerts() -> None:
 
 
 def test_selected_sound_assets_exist() -> None:
-    """Packaged sound assets should be present in product resources."""
-    resource_dir = Path("src/codex_traffic_lights/resources/sounds")
+    """Default sound assets should be present in the visible product sounds folder."""
+    resource_dir = Path("sounds")
 
     for filename in SOUND_FILE_BY_KIND.values():
         assert (resource_dir / filename).is_file()

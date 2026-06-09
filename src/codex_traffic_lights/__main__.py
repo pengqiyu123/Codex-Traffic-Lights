@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from PyQt5.QtWidgets import QApplication
 
@@ -27,7 +27,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     config_manager = ConfigManager()
     config = config_manager.load()
-    _install_hooks(HookInstaller())
+    _install_hooks(HookInstaller)
     monitor = ProcessMonitor(config)
     hook_watcher = HookFileWatcher(config, monitor.registry)
     ipc_connector = VSCodeIpcConnector(config, monitor.registry)
@@ -47,8 +47,12 @@ def main(argv: Sequence[str] | None = None) -> int:
     return app.exec()
 
 
-def _install_hooks(installer: HookInstaller) -> None:
+def _install_hooks(installer_factory: Callable[[], HookInstaller] | HookInstaller) -> None:
     """Install user-level hook bridge entries without blocking app startup."""
+    if getattr(sys, "frozen", False):
+        print("[Codex Traffic Lights] Skipping hook install for packaged app.")
+        return
+    installer = installer_factory() if callable(installer_factory) else installer_factory
     try:
         installer.install_codex_hooks()
         installer.install_claude_hooks()
@@ -76,11 +80,18 @@ def _connect_alerts(
     tray: TrayIcon,
 ) -> tuple[NotificationController, SettingsController]:
     """Wire notification, sound, and persistent setting controllers."""
-    alerts = NotificationController(tray, SoundPlayer())
+    sound_player = SoundPlayer(config)
+    alerts = NotificationController(tray, sound_player)
     alerts.set_config(config)
     side = window.side_buttons
-    buttons = side.notification_button, side.sound_button
-    settings = SettingsController(config, config_manager, *buttons, alerts.set_config)
+    settings = SettingsController(
+        config,
+        config_manager,
+        side.sound_button,
+        window.sound_settings_panel,
+        sound_player,
+        alerts.set_config,
+    )
     return alerts, settings
 
 

@@ -57,6 +57,24 @@ def test_task12_hook_install_success_calls_both_installers(capsys: Any) -> None:
     assert "Hooks installed successfully" in capsys.readouterr().out
 
 
+def test_packaged_startup_skips_hook_install_to_avoid_recursive_exe_launch(
+    monkeypatch: Any,
+    capsys: Any,
+) -> None:
+    """Frozen GUI builds must not register their own exe as a hook command."""
+    entry = importlib.import_module("codex_traffic_lights.__main__")
+
+    class FailingInstaller:
+        def __init__(self) -> None:
+            raise AssertionError("packaged startup must not construct HookInstaller")
+
+    monkeypatch.setattr(entry.sys, "frozen", True, raising=False)
+
+    entry._install_hooks(FailingInstaller)
+
+    assert "Skipping hook install for packaged app" in capsys.readouterr().out
+
+
 def test_task12_real_hook_installer_mocked_write(
     monkeypatch: Any,
     tmp_path: Path,

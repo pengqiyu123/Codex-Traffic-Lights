@@ -44,3 +44,10 @@ htmlcov/
 process/code-light/
 test_process/approval-diagnosis-*.json
 test_process/sound_candidates/
+
+# User custom sounds (keep only defaults)
+sounds/*
+!sounds/任务完成.mp3
+!sounds/待审批确认.mp3
+!sounds/计划模式输入.mp3
+!sounds/运行异常.mp3

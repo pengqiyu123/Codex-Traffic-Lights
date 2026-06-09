@@ -34,6 +34,7 @@ class NotificationController(QObject):
         """Update runtime switches from application configuration."""
         self._notification_enabled = config.notification_enabled
         self._sound_enabled = config.sound_enabled
+        self._sound_player.set_config(config)
 
     def set_sessions(self, sessions: list[SessionStatus]) -> None:
         """Process the latest sessions and emit any user attention alerts."""

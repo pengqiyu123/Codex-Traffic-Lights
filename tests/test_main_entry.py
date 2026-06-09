@@ -165,10 +165,10 @@ def test_main_wires_config_monitor_window_tray_and_exec(
                 (),
                 {
                     "power_toggled": FakeSignal(),
-                    "notification_button": object(),
                     "sound_button": object(),
                 },
             )()
+            self.sound_settings_panel = object()
             created["window"] = self
 
         def show(self) -> None:
@@ -203,7 +203,8 @@ def test_main_wires_config_monitor_window_tray_and_exec(
             self.messages.append((title, text))
 
     class FakeSoundPlayer:
-        def __init__(self) -> None:
+        def __init__(self, config: AppConfig | None = None) -> None:
+            self.config = config
             created["sound_player"] = self
 
     class FakeNotificationController:
@@ -225,14 +226,16 @@ def test_main_wires_config_monitor_window_tray_and_exec(
             self,
             config: AppConfig,
             config_manager: FakeConfigManager,
-            notification_button: object,
             sound_button: object,
+            sound_settings_panel: object,
+            sound_player: FakeSoundPlayer,
             on_config_changed: Any,
         ) -> None:
             self.config = config
             self.config_manager = config_manager
-            self.notification_button = notification_button
             self.sound_button = sound_button
+            self.sound_settings_panel = sound_settings_panel
+            self.sound_player = sound_player
             self.on_config_changed = on_config_changed
             created["settings_controller"] = self
 
@@ -283,9 +286,11 @@ def test_main_wires_config_monitor_window_tray_and_exec(
     assert notification_controller.tray is tray
     assert notification_controller.sound_player is sound_player
     assert notification_controller.configs == [loaded_config]
+    assert sound_player.config is loaded_config
     assert settings_controller.config is loaded_config
-    assert settings_controller.notification_button is window.side_buttons.notification_button
     assert settings_controller.sound_button is window.side_buttons.sound_button
+    assert settings_controller.sound_settings_panel is window.sound_settings_panel
+    assert settings_controller.sound_player is sound_player
 
     monitor.status_changed.emit(CodexStatus.WAITING_APPROVAL)
     assert window.statuses == [CodexStatus.WAITING_APPROVAL]

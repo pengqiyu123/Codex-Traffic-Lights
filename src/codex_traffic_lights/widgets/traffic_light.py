@@ -57,6 +57,7 @@ class TrafficLightWidget(QWidget):
         self._effects: list[LightEffectParams | None] = [None, None, None]
         self._lamp_diameter: int | None = None
         self._orientation = "vertical"
+        self._docked_mode = False
 
     def set_lamp_diameter(self, diameter: int | None) -> None:
         """Set an explicit lamp diameter, or None to use compact auto sizing."""
@@ -73,11 +74,24 @@ class TrafficLightWidget(QWidget):
         """Return the lamp layout orientation."""
         return self._orientation
 
+    @property
+    def is_docked_mode(self) -> bool:
+        """Return whether the widget uses the simplified mini LED renderer."""
+        return self._docked_mode
+
     def set_orientation(self, orientation: str) -> None:
         """Set lamp orientation to vertical or horizontal."""
         if orientation not in {"vertical", "horizontal"}:
             raise ValueError("orientation must be 'vertical' or 'horizontal'")
         self._orientation = orientation
+        self.update()
+
+    def set_docked_mode(self, docked: bool) -> None:
+        """Switch between full glass lamps and the simplified docked LED renderer."""
+        self._docked_mode = docked
+        if docked:
+            self._orientation = "horizontal"
+            self._lamp_diameter = 10
         self.update()
 
     @property
@@ -168,7 +182,10 @@ class TrafficLightWidget(QWidget):
             x = left + index * (diameter + gap) if self._orientation == "horizontal" else left
             y = top if self._orientation == "horizontal" else top + index * (diameter + gap)
             rect = QRectF(x, y, diameter, diameter)
-            _paint_lamp(painter, rect, palette, opacity, effect)
+            if self._docked_mode:
+                _paint_docked_lamp(painter, rect, palette, opacity, effect)
+            else:
+                _paint_lamp(painter, rect, palette, opacity, effect)
 
     def _set_single_opacity(self, light_index: int, opacity: float) -> None:
         """Set one light opacity and repaint."""
@@ -347,3 +364,45 @@ def _paint_lamp(
     _paint_highlight(painter, rect, lit_opacity)
     _paint_inner_glow(painter, rect, palette, lit_opacity)
     _paint_bezel(painter, rect)
+
+
+def _paint_docked_lamp(
+    painter: QPainter,
+    rect: QRectF,
+    palette: LampPalette,
+    opacity: float,
+    effect: LightEffectParams | None,
+) -> None:
+    """Paint one compact three-layer LED for docked mode."""
+    lit_opacity = _lit_opacity(effect, opacity)
+    if lit_opacity > 0.18:
+        radius = rect.width() / 2 + 2
+        glow = QRadialGradient(rect.center(), radius)
+        glow.setColorAt(0.0, _rgba_color(palette.halo_rgba, min(1.0, lit_opacity) * 0.44))
+        glow.setColorAt(1.0, QColor(0, 0, 0, 0))
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(glow)
+        painter.drawEllipse(
+            QRectF(
+                rect.center().x() - radius,
+                rect.center().y() - radius,
+                radius * 2,
+                radius * 2,
+            )
+        )
+
+    dim = QColor(palette.dim)
+    dim.setAlphaF(0.88)
+    painter.setPen(Qt.NoPen)
+    painter.setBrush(dim)
+    painter.drawEllipse(rect)
+
+    bright = QColor(palette.bright)
+    bright.setAlphaF(lit_opacity)
+    painter.setBrush(bright)
+    painter.drawEllipse(rect.adjusted(1, 1, -1, -1))
+
+    painter.setBrush(Qt.NoBrush)
+    painter.setPen(QPen(QColor(BORDER_COLOR), 1))
+    painter.drawEllipse(rect.adjusted(0.5, 0.5, -0.5, -0.5))
+    painter.setPen(Qt.NoPen)

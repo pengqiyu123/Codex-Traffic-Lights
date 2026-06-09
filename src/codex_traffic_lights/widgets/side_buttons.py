@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 
 from PyQt5.QtCore import QPointF, QRectF, Qt, pyqtSignal
-from PyQt5.QtGui import QColor, QPainter, QPainterPath, QPen, QPolygonF
+from PyQt5.QtGui import QColor, QPainter, QPen, QPolygonF
 from PyQt5.QtWidgets import QPushButton, QVBoxLayout, QWidget
 
 DEFAULT_ACCENT_COLOR = "#FFCC00"
@@ -107,7 +107,7 @@ class PaintedIconButton(QPushButton):
 class SideButtonsWidget(QWidget):
     """Vertical strip of compact action buttons."""
 
-    notification_toggled = pyqtSignal(bool)
+    expand_requested = pyqtSignal()
     zoom_in = pyqtSignal()
     zoom_out = pyqtSignal()
     settings_requested = pyqtSignal()
@@ -130,8 +130,7 @@ class SideButtonsWidget(QWidget):
         )
         self._layout.setSpacing(BASE_SPACING)
 
-        self.notification_button = self._make_button("bell", "notification_button", True)
-        self.notification_button.hide()
+        self.expand_button = self._make_button("expand", "expand_button")
         self.zoom_out_button = self._make_button("minus", "zoom_out_button")
         self.zoom_in_button = self._make_button("plus", "zoom_in_button")
         self.settings_button = self._make_button("gear", "settings_button")
@@ -139,7 +138,7 @@ class SideButtonsWidget(QWidget):
         self.sound_button = self._make_button("mute", "sound_button", True)
 
         for button in [
-            self.notification_button,
+            self.expand_button,
             self.zoom_out_button,
             self.zoom_in_button,
             self.settings_button,
@@ -149,7 +148,7 @@ class SideButtonsWidget(QWidget):
             self._layout.addWidget(button)
         self._layout.addStretch(1)
 
-        self.notification_button.toggled.connect(self.notification_toggled)
+        self.expand_button.clicked.connect(self.expand_requested)
         self.zoom_out_button.clicked.connect(self.zoom_out)
         self.zoom_in_button.clicked.connect(self.zoom_in)
         self.settings_button.clicked.connect(self.settings_requested)
@@ -188,10 +187,10 @@ class SideButtonsWidget(QWidget):
 def _tooltip_for_icon(icon_name: str) -> str:
     """Return a short tooltip for one icon."""
     labels = {
-        "bell": "通知",
+        "expand": "展开",
         "minus": "缩小",
         "plus": "放大",
-        "gear": "展开",
+        "gear": "声音设置",
         "power": "电源",
         "mute": "静音",
     }
@@ -200,8 +199,8 @@ def _tooltip_for_icon(icon_name: str) -> str:
 
 def _paint_icon(painter: QPainter, icon_name: str, rect: QRectF, color: QColor) -> None:
     """Dispatch vector icon painting."""
-    if icon_name == "bell":
-        _paint_bell(painter, rect)
+    if icon_name == "expand":
+        _paint_expand(painter, rect)
     elif icon_name == "minus":
         _paint_minus(painter, rect)
     elif icon_name == "plus":
@@ -214,33 +213,21 @@ def _paint_icon(painter: QPainter, icon_name: str, rect: QRectF, color: QColor) 
         _paint_mute(painter, rect, color)
 
 
-def _paint_bell(painter: QPainter, rect: QRectF) -> None:
-    """Paint a small notification bell outline."""
-    path = QPainterPath()
-    path.moveTo(rect.center().x(), rect.top() + 1)
-    path.cubicTo(
-        rect.right() - 1,
-        rect.top() + 2,
-        rect.right() - 1,
-        rect.bottom() - 5,
-        rect.right() - 2,
-        rect.bottom() - 4,
-    )
-    path.lineTo(rect.left(), rect.bottom() - 4)
-    path.cubicTo(
-        rect.left() + 1,
-        rect.bottom() - 5,
-        rect.left() + 1,
-        rect.top() + 2,
-        rect.center().x(),
-        rect.top() + 1,
-    )
-    painter.drawPath(path)
+def _paint_expand(painter: QPainter, rect: QRectF) -> None:
+    """Paint a compact panel-expand icon."""
+    painter.drawRect(rect.adjusted(1.5, 2.5, -1.5, -2.5))
     painter.drawLine(
-        QPointF(rect.left() + 3, rect.bottom() - 3),
-        QPointF(rect.right() - 3, rect.bottom() - 3),
+        QPointF(rect.left() + 4, rect.center().y()),
+        QPointF(rect.right() - 4, rect.center().y()),
     )
-    painter.drawEllipse(QPointF(rect.center().x(), rect.bottom() - 1), 1.3, 1.3)
+    painter.drawLine(
+        QPointF(rect.center().x(), rect.top() + 5),
+        QPointF(rect.right() - 4, rect.center().y()),
+    )
+    painter.drawLine(
+        QPointF(rect.center().x(), rect.bottom() - 5),
+        QPointF(rect.right() - 4, rect.center().y()),
+    )
 
 
 def _paint_minus(painter: QPainter, rect: QRectF) -> None:

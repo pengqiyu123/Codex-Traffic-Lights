@@ -24,7 +24,7 @@ def qapplication() -> QApplication:
 @pytest.mark.parametrize(
     ("button_name", "signal_name"),
     [
-        ("notification_button", "notification_toggled"),
+        ("expand_button", "expand_requested"),
         ("zoom_out_button", "zoom_out"),
         ("zoom_in_button", "zoom_in"),
         ("settings_button", "settings_requested"),
@@ -48,7 +48,7 @@ def test_each_side_button_emits_its_signal(button_name: str, signal_name: str) -
 @pytest.mark.parametrize(
     "button_name",
     [
-        "notification_button",
+        "expand_button",
         "zoom_out_button",
         "zoom_in_button",
         "settings_button",
@@ -78,11 +78,14 @@ def test_side_buttons_render_without_error() -> None:
     assert pixmap.size() == QSize(32, 220)
 
 
-def test_notification_button_is_hidden_while_feature_is_disabled() -> None:
-    """Notification UI should stay hidden until the popup feature returns."""
+def test_expand_button_reuses_hidden_notification_slot() -> None:
+    """The first side slot should now open sessions instead of showing notifications."""
     widget = SideButtonsWidget()
 
-    assert widget.notification_button.isHidden()
+    assert not widget.expand_button.isHidden()
+    assert widget.expand_button.property("icon_name") == "expand"
+    assert widget.expand_button.toolTip() == "展开"
+    assert widget.settings_button.toolTip() == "声音设置"
 
 
 def test_side_buttons_scale_buttons_and_icon_area() -> None:

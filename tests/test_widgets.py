@@ -198,7 +198,7 @@ def test_main_window_scale_updates_content_dimensions() -> None:
 
 
 def test_main_window_toggles_expanded_frame() -> None:
-    """The settings affordance should toggle the reserved expanded frame."""
+    """The sessions affordance should toggle the reserved expanded frame."""
     window = FramelessMainWindow()
 
     assert window.is_expanded is False
@@ -216,6 +216,44 @@ def test_main_window_toggles_expanded_frame() -> None:
     assert window.width() == 104
     assert window.height() == 220
     assert window.traffic_light.orientation == "vertical"
+
+
+def test_main_window_gear_opens_sound_settings_mode() -> None:
+    """The gear should open Expanded sound settings without using the sessions panel."""
+    window = FramelessMainWindow()
+
+    window.open_sound_settings()
+
+    assert window.is_expanded is True
+    assert window.expanded_content_mode == "sound_settings"
+    assert not window.sound_settings_panel.isHidden()
+    assert window.session_matrix.isHidden()
+
+
+def test_main_window_settings_button_click_again_closes_sound_settings() -> None:
+    """Clicking the gear again should close the currently open settings panel."""
+    window = FramelessMainWindow()
+
+    window.side_buttons.settings_button.click()
+    window.side_buttons.settings_button.click()
+
+    assert window.is_expanded is False
+    assert window.sound_settings_panel.isHidden()
+    assert window.session_matrix.isHidden()
+    assert window.traffic_light.orientation == "vertical"
+
+
+def test_main_window_expand_button_switches_back_to_sessions_mode() -> None:
+    """The first side button should switch settings back to session monitoring."""
+    window = FramelessMainWindow()
+
+    window.open_sound_settings()
+    window.show_sessions()
+
+    assert window.is_expanded is True
+    assert window.expanded_content_mode == "sessions"
+    assert not window.session_matrix.isHidden()
+    assert window.sound_settings_panel.isHidden()
 
 
 def test_main_window_filters_claude_sessions_from_display_and_aggregate() -> None:

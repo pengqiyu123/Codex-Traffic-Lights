@@ -17,6 +17,14 @@ class LightMode(Enum):
     FAST_FLASH = "fast_flash"
 
 
+class EdgeState(Enum):
+    """Visual edge state for the floating window."""
+
+    FREE = "free"
+    SNAPPED = "snapped"
+    DOCKED = "docked"
+
+
 @dataclass(frozen=True)
 class LightState:
     """Three-light state for one Codex status."""
@@ -80,6 +88,10 @@ class AppConfig:
     window_scale: float = 1.0
     notification_enabled: bool = True
     sound_enabled: bool = True
+    sound_completed_path: str | None = None
+    sound_waiting_approval_path: str | None = None
+    sound_waiting_user_input_path: str | None = None
+    sound_error_path: str | None = None
     vscode_ipc_enabled: bool = True
     vscode_ipc_pipe_path: str = r"\\.\pipe\codex-ipc"
     vscode_ipc_reconnect_delay: float = 2.0

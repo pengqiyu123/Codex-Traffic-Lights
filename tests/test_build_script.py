@@ -31,6 +31,8 @@ def test_build_command_matches_pyinstaller_contract() -> None:
         "codex-traffic-lights",
         "--add-data",
         "src/codex_traffic_lights/resources;codex_traffic_lights/resources",
+        "--add-data",
+        "sounds;sounds",
         "--icon",
         "src/codex_traffic_lights/resources/icons/app.ico",
         "src/codex_traffic_lights/__main__.py",
@@ -56,9 +58,11 @@ def test_build_main_returns_pyinstaller_exit_code(monkeypatch: object) -> None:
 
 
 def test_packaging_resource_paths_exist() -> None:
-    """The PyInstaller resource folder and icon path should exist."""
+    """The PyInstaller resource, icon, and sound paths should exist."""
     resources = Path("src/codex_traffic_lights/resources")
     icon = resources / "icons" / "app.ico"
+    sound_dir = Path("sounds")
 
     assert resources.is_dir()
     assert icon.is_file()
+    assert sound_dir.is_dir()

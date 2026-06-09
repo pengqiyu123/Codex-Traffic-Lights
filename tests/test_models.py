@@ -4,7 +4,7 @@ from dataclasses import FrozenInstanceError
 
 import pytest
 
-from codex_traffic_lights.models import AppConfig, CodexStatus, LightMode
+from codex_traffic_lights.models import AppConfig, CodexStatus, EdgeState, LightMode
 
 EXPECTED_STATUS_NAMES = {
     "OFFLINE",
@@ -33,6 +33,11 @@ def test_codex_status_has_only_confirmed_six_members() -> None:
     """CodexStatus must follow the audited six-state product model."""
     assert {status.name for status in CodexStatus} == EXPECTED_STATUS_NAMES
     assert len(CodexStatus) == 6
+
+
+def test_edge_state_tracks_free_snapped_and_docked_window_shapes() -> None:
+    """EdgeState should model the floating window's three visible edge modes."""
+    assert [state.value for state in EdgeState] == ["free", "snapped", "docked"]
 
 
 def test_codex_status_excludes_obsolete_ai_inferred_members() -> None:
@@ -92,6 +97,10 @@ def test_app_config_defaults_match_task_contract() -> None:
     assert config.window_scale == 1.0
     assert config.notification_enabled is True
     assert config.sound_enabled is True
+    assert config.sound_completed_path is None
+    assert config.sound_waiting_approval_path is None
+    assert config.sound_waiting_user_input_path is None
+    assert config.sound_error_path is None
     assert config.vscode_ipc_enabled is True
     assert config.vscode_ipc_pipe_path == r"\\.\pipe\codex-ipc"
     assert config.vscode_ipc_reconnect_delay == 2.0
