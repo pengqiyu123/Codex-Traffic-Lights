@@ -1,0 +1,4 @@
+interface:
+  display_name: "Product State UI Delivery"
+  short_description: "Ship honest desktop status UI"
+  default_prompt: "Use $product-state-ui-delivery to review this desktop status UI change for real-state evidence, animation/scale behavior, packaging, and release hygiene."
