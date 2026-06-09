@@ -14,7 +14,7 @@ These project-local skills mirror the global Codex skills used for Codex Traffic
 
 - `tdd-workflow`: test-first checkpoints for product changes.
 - `verification-loop`: final build, lint, test, coverage, and smoke verification.
-- `product-state-ui-delivery`: lessons from Codex Traffic Lights about truthful state evidence, UI animation/scale audits, portable resources, and release hygiene.
+- `product-state-ui-delivery`: lessons from Codex Traffic Lights about truthful state evidence, multi-state UI design, interaction-first thinking, animation conflict prevention, boundary testing, resource architecture, and release hygiene. Updated through v0.5.
 
 Global copies remain in `%USERPROFILE%\.codex\skills`; these project copies make the same workflow
 available from this repository's `.agents/skills` surface.
